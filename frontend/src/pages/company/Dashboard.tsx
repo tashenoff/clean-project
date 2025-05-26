@@ -8,39 +8,34 @@ const CompanyDashboard: React.FC = () => {
   const { user } = useAuth();
   const [company, setCompany] = useState<any>(null);
   const [employees, setEmployees] = useState<any[]>([]);
-  const [balance, setBalance] = useState({
-    current: 0,
-    max: 0,
-    used: 0
-  });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchCompanyData = async () => {
-      if (!companyId) return;
+      if (!companyId) {
+        setError('Company ID is required');
+        setLoading(false);
+        return;
+      }
       
       try {
+        console.log('Fetching company data for ID:', companyId);
+        
         // Fetch company details
-        const companyResponse = await companyAPI.getCompany(Number(companyId));
-        setCompany(companyResponse.data);
+        const response = await companyAPI.getCompanyById(Number(companyId));
+        console.log('Server response:', response.data);
         
-        // Fetch company balance
-        const balanceResponse = await companyAPI.getBalance(Number(companyId));
-        setBalance({
-          current: balanceResponse.data.current_balance,
-          max: balanceResponse.data.max_balance,
-          used: balanceResponse.data.used_balance
-        });
-        
-        // For a real implementation, we would fetch employees from an API endpoint
-        // This is a placeholder that would be replaced with real API calls
-        setEmployees([
-          { id: 1, name: 'John Doe', position: 'Manager', email: 'john@example.com', date_added: '2025-01-15' },
-          { id: 2, name: 'Jane Smith', position: 'Developer', email: 'jane@example.com', date_added: '2025-02-20' },
-          { id: 3, name: 'Bob Johnson', position: 'Designer', email: 'bob@example.com', date_added: '2025-03-10' }
-        ]);
-      } catch (error) {
+        if (response.data) {
+          const { company: companyData, employees: employeesData } = response.data;
+          setCompany(companyData);
+          setEmployees(employeesData || []);
+        } else {
+          setError('Company data not found');
+        }
+      } catch (error: any) {
         console.error('Error fetching company data:', error);
+        setError(error.response?.data?.message || 'Error loading company data');
       } finally {
         setLoading(false);
       }
@@ -57,11 +52,11 @@ const CompanyDashboard: React.FC = () => {
     );
   }
 
-  if (!company) {
+  if (error || !company) {
     return (
       <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
         <strong className="font-bold">Error!</strong>
-        <span className="block sm:inline"> Company not found or you don't have access.</span>
+        <span className="block sm:inline"> {error || 'Company not found or you don\'t have access.'}</span>
       </div>
     );
   }
@@ -88,35 +83,22 @@ const CompanyDashboard: React.FC = () => {
                 company.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                 'bg-red-100 text-red-800'
               }`}>
-                {company.status.toUpperCase()}
+                {(company.status || 'unknown').toUpperCase()}
               </span>
             </p>
-          </div>
-          <div className="text-right">
-            <div className="bg-primary text-white px-4 py-2 rounded-lg">
-              <div className="text-sm">Balance</div>
-              <div className="text-2xl font-bold">{balance.current} / {balance.max}</div>
-            </div>
-            <div className="mt-2 text-sm text-gray-500">
-              Used: {balance.used} points
-            </div>
           </div>
         </div>
       </div>
       
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div className="bg-white p-4 rounded-lg shadow-sm">
           <h3 className="text-sm font-medium text-gray-500">Employees</h3>
           <p className="text-2xl font-bold">{employees.length}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow-sm">
-          <h3 className="text-sm font-medium text-gray-500">Available Balance</h3>
-          <p className="text-2xl font-bold text-primary">{balance.current}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow-sm">
-          <h3 className="text-sm font-medium text-gray-500">Used Balance</h3>
-          <p className="text-2xl font-bold text-secondary">{balance.used}</p>
+          <h3 className="text-sm font-medium text-gray-500">Status</h3>
+          <p className="text-2xl font-bold text-primary">{company.status || 'Unknown'}</p>
         </div>
       </div>
       
@@ -161,7 +143,7 @@ const CompanyDashboard: React.FC = () => {
                       <div className="text-sm text-gray-500">{employee.email}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(employee.date_added).toLocaleDateString()}
+                      {employee.date_added ? new Date(employee.date_added).toLocaleDateString() : '-'}
                     </td>
                   </tr>
                 ))}
@@ -171,22 +153,6 @@ const CompanyDashboard: React.FC = () => {
         ) : (
           <p className="text-gray-500">No employees found.</p>
         )}
-      </div>
-      
-      {/* Quick Actions */}
-      <div className="mt-6">
-        <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button className="bg-primary hover:bg-primary-dark text-white py-3 px-4 rounded-lg shadow-sm">
-            Add Employee
-          </button>
-          <button className="bg-secondary hover:bg-secondary-dark text-white py-3 px-4 rounded-lg shadow-sm">
-            Add Balance
-          </button>
-          <button className="bg-gray-600 hover:bg-gray-700 text-white py-3 px-4 rounded-lg shadow-sm">
-            Distribute Balance
-          </button>
-        </div>
       </div>
     </div>
   );

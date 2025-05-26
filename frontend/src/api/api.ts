@@ -72,10 +72,11 @@ apiClient.interceptors.response.use(
     if (error.response) {
       switch (error.response.status) {
         case 401:
-          // Unauthorized - clear storage
+          // Unauthorized - clear storage and reload page
           console.error('Unauthorized error - clearing auth data');
           localStorage.removeItem('token');
           localStorage.removeItem('user');
+          window.location.href = '/login';
           break;
         case 403:
           // Forbidden - user doesn't have permission
@@ -132,9 +133,46 @@ export const authAPI = {
       return response;
     } catch (error) {
       console.error('Login error:', error);
-      // Очищаем токен при ошибке
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      throw error;
+    }
+  },
+  
+  verifyToken: async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    try {
+      const response = await apiClient.get('/auth/verify');
+      
+      // Проверяем структуру ответа
+      if (!response.data || !response.data.user_id || !response.data.role) {
+        throw new Error('Invalid response format from server');
+      }
+
+      // Получаем полные данные пользователя
+      const userResponse = await userAPI.getProfile();
+      
+      return {
+        ...response,
+        data: {
+          ...response.data,
+          user: userResponse.data
+        }
+      };
+    } catch (error) {
+      console.error('Token verification error:', error);
+      throw error;
+    }
+  },
+  
+  logout: async () => {
+    try {
+      const response = await apiClient.post('/auth/logout');
+      return response;
+    } catch (error) {
+      console.error('Logout error:', error);
       throw error;
     }
   },
@@ -144,14 +182,8 @@ export const authAPI = {
     password: string;
     role: string;
   }) => {
-    console.log('Attempting registration step 1:', { email: userData.email, role: userData.role });
     try {
       const response = await apiClient.post('/auth/register/step1', userData);
-      console.log('Registration step 1 response:', response.data);
-      // Проверяем ответ
-      if (!response.data.token || !response.data.user) {
-        throw new Error('Invalid response format from registration');
-      }
       return response;
     } catch (error) {
       console.error('Registration Step 1 error:', error);
@@ -164,69 +196,11 @@ export const authAPI = {
     bin: string;
     address: string;
   }) => {
-    console.log('Attempting registration step 2:', companyData);
     try {
       const response = await apiClient.post('/auth/register/step2', companyData);
-      console.log('Registration step 2 response:', response.data);
-      // Проверяем ответ
-      if (!response.data.user) {
-        throw new Error('Invalid response format from registration step 2');
-      }
       return response;
     } catch (error) {
       console.error('Registration Step 2 error:', error);
-      throw error;
-    }
-  },
-  
-  logout: async () => {
-    console.log('Attempting logout');
-    try {
-      // Сначала очищаем локальное хранилище
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      
-      const response = await apiClient.post('/auth/logout');
-      console.log('Logout response:', response.data);
-      return response;
-    } catch (error) {
-      console.error('Logout error:', error);
-      // В любом случае очищаем данные
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      throw error;
-    }
-  },
-  
-  verifyToken: async () => {
-    const token = localStorage.getItem('token');
-    console.log('Verifying token:', token ? 'Token exists' : 'No token');
-    
-    if (!token) {
-      throw new Error('No token found');
-    }
-
-    try {
-      const response = await apiClient.get('/auth/verify');
-      console.log('Token verification response:', {
-        status: response.status,
-        data: response.data
-      });
-
-      // Проверяем структуру ответа
-      if (!response.data || !response.data.user_id || !response.data.role) {
-        throw new Error('Invalid response format from server');
-      }
-
-      return response;
-    } catch (error) {
-      console.error('Token verification error:', {
-        error,
-        response: error instanceof AxiosError ? error.response?.data : null
-      });
-      // Очищаем данные при ошибке верификации
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
       throw error;
     }
   }
@@ -275,22 +249,61 @@ export const listingsAPI = {
     per_page?: number;
   }) => {
     try {
-      console.log('Fetching my listings with params:', params);
-      const response = await apiClient.get('/listings/my', { params });
+      const token = localStorage.getItem('token');
+      const user = localStorage.getItem('user');
+      
+      console.log('Fetching my listings:', {
+        params,
+        hasToken: !!token,
+        user: user ? JSON.parse(user) : null,
+        headers: {
+          Authorization: token ? `Bearer ${token}` : undefined
+        }
+      });
+      
+      const response = await apiClient.get('/listings/my-listings', { params });
+      
+      console.log('My listings response:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        data: response.data,
+        listingsCount: response.data?.listings?.length
+      });
+      
       return response;
-    } catch (error) {
-      console.error('Error fetching my listings:', error);
+    } catch (error: any) {
+      console.error('Error fetching my listings:', {
+        error: {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status
+        },
+        params,
+        user: localStorage.getItem('user')
+      });
       throw error;
     }
   },
   
   getListing: async (id: number) => {
     try {
-      console.log('Fetching listing details:', id);
+      console.log('Fetching listing details for ID:', id);
       const response = await apiClient.get(`/listings/${id}`);
+      console.log('API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        data: response.data
+      });
       return response;
-    } catch (error) {
-      console.error('Error fetching listing details:', error);
+    } catch (error: any) {
+      console.error('Error fetching listing details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        stack: error.stack
+      });
       throw error;
     }
   },
@@ -361,10 +374,65 @@ export const listingsAPI = {
     }
   },
   
-  updateListing: async (id: number, listingData: any) => {
+  updateListing: async (id: number, listingData: {
+    title: string;
+    description: string;
+    category: string;
+    budget?: string;
+    location?: string;
+    deadline?: string;
+    contact_name?: string;
+    contact_email?: string;
+    contact_phone?: string;
+    status: 'published' | 'unpublished';
+    purchase_method: string;
+    payment_terms: string;
+    listing_type: string;
+    delivery_date: string;
+    publication_period: string;
+  }) => {
     try {
+      // Валидация обязательных полей
+      if (!listingData.title?.trim()) {
+        throw new Error('Title is required');
+      }
+      if (!listingData.description?.trim()) {
+        throw new Error('Description is required');
+      }
+      if (!listingData.category?.trim()) {
+        throw new Error('Category is required');
+      }
+      if (!listingData.purchase_method?.trim()) {
+        throw new Error('Purchase method is required');
+      }
+      if (!listingData.payment_terms?.trim()) {
+        throw new Error('Payment terms is required');
+      }
+      if (!listingData.listing_type?.trim()) {
+        throw new Error('Listing type is required');
+      }
+      if (!listingData.delivery_date?.trim()) {
+        throw new Error('Delivery date is required');
+      }
+      if (!listingData.publication_period?.trim()) {
+        throw new Error('Publication period is required');
+      }
+
       console.log('Updating listing:', { id, data: listingData });
-      const response = await apiClient.put(`/listings/${id}`, listingData);
+      
+      // Форматируем данные перед отправкой
+      const formattedData = {
+        ...listingData,
+        budget: listingData.budget ? Number(listingData.budget) : undefined,
+        deadline: listingData.deadline || undefined,
+        contact_name: listingData.contact_name?.trim() || undefined,
+        contact_email: listingData.contact_email?.trim() || undefined,
+        contact_phone: listingData.contact_phone?.trim() || undefined,
+        publication_period: Number(listingData.publication_period)
+      };
+
+      const response = await apiClient.put(`/listings/${id}`, formattedData);
+      console.log('Listing updated successfully:', response.data);
       return response;
     } catch (error) {
       console.error('Error updating listing:', error);
@@ -427,6 +495,10 @@ export const responsesAPI = {
 export const companyAPI = {
   getCompanyProfile: () => {
     return apiClient.get('/companies/profile');
+  },
+  
+  getCompanyById: (id: number) => {
+    return apiClient.get(`/companies/${id}`);
   },
   
   updateCompanyProfile: (profileData: any) => {

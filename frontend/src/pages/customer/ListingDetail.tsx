@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { listingsAPI, responsesAPI } from '../../api/api';
+import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '../../components/ui/card';
+import { Badge } from '../../components/ui/badge';
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '../../components/ui/table';
 
 const CustomerListingDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -10,23 +13,68 @@ const CustomerListingDetail: React.FC = () => {
   const [responseLoading, setResponseLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('details');
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchListingData = async () => {
-      if (!id) return;
+      if (!id) {
+        console.log('No listing ID provided');
+        setError('Invalid listing ID');
+        return;
+      }
       
       try {
         setLoading(true);
-        // Fetch listing details
-        const listingResponse = await listingsAPI.getListing(Number(id));
-        setListing(listingResponse.data);
+        console.log('Fetching listing details for ID:', id);
         
-        // Fetch responses for this listing
-        const responsesResponse = await responsesAPI.getListingResponses(Number(id));
-        setResponses(responsesResponse.data.responses);
-      } catch (error) {
+        const listingResponse = await listingsAPI.getListing(Number(id));
+        console.log('Received listing response:', listingResponse);
+        
+        if (!listingResponse.data) {
+          console.error('No data in response');
+          setError('Failed to load listing details: No data received');
+          return;
+        }
+
+        const { listing: listingData, owner, responses: responsesData } = listingResponse.data;
+
+        if (!listingData) {
+          console.error('No listing data in response');
+          setError('Failed to load listing details: Invalid data format');
+          return;
+        }
+
+        const combinedData = {
+          ...listingData,
+          contact_name: owner?.first_name && owner?.last_name 
+            ? `${owner.first_name} ${owner.last_name}` 
+            : owner?.company_name || 'Not specified',
+          contact_email: owner?.email || 'Not specified',
+          contact_phone: owner?.phone || 'Not specified',
+          location: owner?.city && owner?.country ? `${owner.city}, ${owner.country}` : 'Not specified',
+          budget: listingData.budget || 'Not specified',
+          deadline: listingData.delivery_date || 'Not specified',
+          purchase_method: listingData.purchase_method || 'Not specified',
+          payment_terms: listingData.payment_terms || 'Not specified',
+          listing_type: listingData.listing_type || 'Not specified',
+          publication_period: listingData.publication_period || 'Not specified',
+          owner,
+          responses: responsesData || { accepted: null, pending: null, rejected: null, total: 0 }
+        };
+        
+        console.log('Combined listing data:', combinedData);
+        setListing(combinedData);
+
+        // Если это новое объявление, показываем сообщение об успехе
+        const isNew = new URLSearchParams(window.location.search).get('new') === 'true';
+        if (isNew) {
+          setSuccessMessage('Объявление успешно создано!');
+        }
+
+      } catch (error: any) {
         console.error('Error fetching listing data:', error);
-        setError('Failed to load listing details. Please try again later.');
+        const errorMessage = error.response?.data?.error || error.message || 'Failed to load listing details';
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -35,7 +83,7 @@ const CustomerListingDetail: React.FC = () => {
     fetchListingData();
   }, [id]);
 
-  const handleStatusChange = async (newStatus: string) => {
+  const handleStatusChange = async (newStatus: 'published' | 'unpublished' | 'closed' | 'cancelled') => {
     if (!id || !listing) return;
     
     try {
@@ -47,9 +95,10 @@ const CustomerListingDetail: React.FC = () => {
         ...listing,
         status: newStatus
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error changing listing status:', error);
-      setError('Failed to update listing status. Please try again.');
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to update listing status. Please try again.';
+      setError(errorMessage);
     } finally {
       setResponseLoading(false);
     }
@@ -73,28 +122,23 @@ const CustomerListingDetail: React.FC = () => {
   };
 
   const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'published':
-        return <span className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">Published</span>;
-      case 'unpublished':
-        return <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">Unpublished</span>;
-      case 'completed':
-        return <span className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800">Completed</span>;
-      default:
-        return <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">{status}</span>;
-    }
+    const variants = {
+      published: { variant: 'default' as const, text: 'Published' },
+      unpublished: { variant: 'secondary' as const, text: 'Unpublished' },
+      completed: { variant: 'default' as const, text: 'Completed' }
+    };
+    const { variant, text } = variants[status as keyof typeof variants] || { variant: 'secondary', text: status };
+    return <Badge variant={variant}>{text}</Badge>;
   };
 
   const getResponseStatusBadge = (status: string) => {
-    switch (status) {
-      case 'accepted':
-        return <span className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">Accepted</span>;
-      case 'rejected':
-        return <span className="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800">Rejected</span>;
-      case 'pending':
-      default:
-        return <span className="px-2 py-1 text-xs font-medium rounded bg-yellow-100 text-yellow-800">Pending</span>;
-    }
+    const variants = {
+      accepted: { variant: 'default' as const, text: 'Accepted' },
+      rejected: { variant: 'destructive' as const, text: 'Rejected' },
+      pending: { variant: 'secondary' as const, text: 'Pending' }
+    };
+    const { variant, text } = variants[status as keyof typeof variants] || { variant: 'secondary', text: status };
+    return <Badge variant={variant}>{text}</Badge>;
   };
 
   if (loading) {
@@ -124,209 +168,167 @@ const CustomerListingDetail: React.FC = () => {
   }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{listing.title}</h1>
-          <div className="flex items-center mt-2 space-x-4">
-            <div>{getStatusBadge(listing.status)}</div>
-            <div className="text-sm text-gray-500">
-              Created: {new Date(listing.created_at).toLocaleDateString()}
+    <div className="space-y-6">
+      {successMessage && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
+          <span className="block sm:inline">{successMessage}</span>
+        </div>
+      )}
+
+      {/* Listing Details */}
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="text-2xl">{listing.title}</CardTitle>
+              <CardDescription className="flex items-center mt-2 space-x-4">
+                {getStatusBadge(listing.status)}
+                <span>Создано: {new Date(listing.created_at).toLocaleDateString()}</span>
+                <span>Категория: {listing.category}</span>
+              </CardDescription>
             </div>
-            <div className="text-sm text-gray-500">
-              Category: {listing.category}
+            <div className="flex space-x-2">
+              <Link 
+                to={`/customer/listings/${id}/edit`}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-md text-sm font-medium"
+              >
+                Редактировать
+              </Link>
+              {listing.status === 'unpublished' && (
+                <button
+                  onClick={() => handleStatusChange('published')}
+                  disabled={responseLoading}
+                  className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
+                >
+                  Опубликовать
+                </button>
+              )}
+              {listing.status === 'published' && (
+                <button
+                  onClick={() => handleStatusChange('unpublished')}
+                  disabled={responseLoading}
+                  className="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
+                >
+                  Снять с публикации
+                </button>
+              )}
+              {(listing.status === 'published' || listing.status === 'unpublished') && (
+                <button
+                  onClick={() => handleStatusChange('closed')}
+                  disabled={responseLoading}
+                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
+                >
+                  Завершить
+                </button>
+              )}
             </div>
           </div>
-        </div>
-        <div className="flex space-x-2">
-          <Link 
-            to={`/customer/listings/${id}/edit`}
-            className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-md"
-          >
-            Edit
-          </Link>
-          {listing.status === 'unpublished' && (
-            <button
-              onClick={() => handleStatusChange('published')}
-              disabled={responseLoading}
-              className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md disabled:opacity-50"
-            >
-              Publish
-            </button>
-          )}
-          {listing.status === 'published' && (
-            <button
-              onClick={() => handleStatusChange('unpublished')}
-              disabled={responseLoading}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded-md disabled:opacity-50"
-            >
-              Unpublish
-            </button>
-          )}
-          {(listing.status === 'published' || listing.status === 'unpublished') && (
-            <button
-              onClick={() => handleStatusChange('completed')}
-              disabled={responseLoading}
-              className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md disabled:opacity-50"
-            >
-              Mark as Completed
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('details')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'details'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Listing Details
-          </button>
-          <button
-            onClick={() => setActiveTab('responses')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'responses'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Responses ({responses.length})
-          </button>
-        </nav>
-      </div>
-
-      {/* Content */}
-      {activeTab === 'details' ? (
-        <div className="bg-white p-6 rounded-lg shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">Description</h2>
-          <p className="text-gray-700 whitespace-pre-line mb-6">{listing.description}</p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="text-md font-semibold mb-2">Details</h3>
-              <div className="space-y-2">
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+            {/* Left Column - Details */}
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Детали</h3>
+              <div className="space-y-4">
                 <div className="flex">
-                  <span className="font-medium w-32">Budget:</span>
-                  <span>{listing.budget ? `$${listing.budget}` : 'Not specified'}</span>
+                  <span className="text-gray-600 w-32">Тип заявки:</span>
+                  <span className="text-gray-900">{listing.listing_type}</span>
                 </div>
                 <div className="flex">
-                  <span className="font-medium w-32">Location:</span>
-                  <span>{listing.location || 'Not specified'}</span>
+                  <span className="text-gray-600 w-32">Способ закупки:</span>
+                  <span className="text-gray-900">{listing.purchase_method}</span>
                 </div>
                 <div className="flex">
-                  <span className="font-medium w-32">Deadline:</span>
-                  <span>
-                    {listing.deadline 
-                      ? new Date(listing.deadline).toLocaleDateString() 
-                      : 'Not specified'}
+                  <span className="text-gray-600 w-32">Условия оплаты:</span>
+                  <span className="text-gray-900">{listing.payment_terms}</span>
+                </div>
+                <div className="flex">
+                  <span className="text-gray-600 w-32">Бюджет:</span>
+                  <span className="text-gray-900">{listing.budget}</span>
+                </div>
+                <div className="flex">
+                  <span className="text-gray-600 w-32">Местоположение:</span>
+                  <span className="text-gray-900">{listing.location}</span>
+                </div>
+                <div className="flex">
+                  <span className="text-gray-600 w-32">Срок поставки:</span>
+                  <span className="text-gray-900">
+                    {listing.delivery_date 
+                      ? new Date(listing.delivery_date).toLocaleDateString() 
+                      : 'Не указан'}
                   </span>
                 </div>
+                <div className="flex">
+                  <span className="text-gray-600 w-32">Период публикации:</span>
+                  <span className="text-gray-900">{listing.publication_period} дней</span>
+                </div>
               </div>
             </div>
-            
-            <div>
-              <h3 className="text-md font-semibold mb-2">Contact Information</h3>
-              <div className="space-y-2">
+
+            {/* Right Column - Contact Information */}
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Контактная информация</h3>
+              <div className="space-y-4">
                 <div className="flex">
-                  <span className="font-medium w-32">Contact Name:</span>
-                  <span>{listing.contact_name || 'Not specified'}</span>
+                  <span className="text-gray-600 w-32">Контактное лицо:</span>
+                  <span className="text-gray-900">{listing.contact_name}</span>
                 </div>
                 <div className="flex">
-                  <span className="font-medium w-32">Contact Email:</span>
-                  <span>{listing.contact_email || 'Not specified'}</span>
+                  <span className="text-gray-600 w-32">Email:</span>
+                  <span className="text-gray-900">{listing.contact_email}</span>
                 </div>
                 <div className="flex">
-                  <span className="font-medium w-32">Contact Phone:</span>
-                  <span>{listing.contact_phone || 'Not specified'}</span>
+                  <span className="text-gray-600 w-32">Телефон:</span>
+                  <span className="text-gray-900">{listing.contact_phone}</span>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg shadow-sm">
-          {responses.length > 0 ? (
-            <div className="overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Executor
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Experience
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Message
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {responses.map((response) => (
-                    <tr key={response.id}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{response.email}</div>
-                        <div className="text-xs text-gray-500">{response.city}, {response.country}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{response.experience_level}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900 truncate max-w-xs">{response.message}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {getResponseStatusBadge(response.status)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(response.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {response.status === 'pending' && (
-                          <div className="flex justify-end space-x-2">
-                            <button
-                              onClick={() => handleResponseAction(response.id, 'accepted')}
-                              disabled={responseLoading}
-                              className="text-green-600 hover:text-green-900 disabled:opacity-50"
-                            >
-                              Accept
-                            </button>
-                            <button
-                              onClick={() => handleResponseAction(response.id, 'rejected')}
-                              disabled={responseLoading}
-                              className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="p-6 text-center">
-              <p className="text-gray-500">No responses yet for this listing.</p>
-            </div>
-          )}
-        </div>
+        </CardContent>
+      </Card>
+
+      {/* Responses Section */}
+      {responses.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Отклики ({responses.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Исполнитель</TableHead>
+                  <TableHead>Опыт</TableHead>
+                  <TableHead>Сообщение</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead>Дата</TableHead>
+                  <TableHead className="text-right">Действия</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {responses.map((response) => (
+                  <TableRow key={response.id}>
+                    <TableCell>
+                      <div className="font-medium">{response.email}</div>
+                      <div className="text-sm text-gray-500">{response.city}, {response.country}</div>
+                    </TableCell>
+                    <TableCell>{response.experience_level}</TableCell>
+                    <TableCell>
+                      <div className="truncate max-w-xs">{response.message}</div>
+                    </TableCell>
+                    <TableCell>{getResponseStatusBadge(response.status)}</TableCell>
+                    <TableCell>{new Date(response.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-right">
+                      <Link to={`/customer/responses/${response.id}`} className="text-primary hover:text-primary-dark">
+                        View
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

@@ -14,6 +14,7 @@ import CustomerListings from './pages/customer/Listings';
 import CustomerListingDetail from './pages/customer/ListingDetail';
 import CustomerCreateListing from './pages/customer/CreateListing';
 import CustomerProfile from './pages/customer/Profile';
+import CustomerEditListing from './pages/customer/EditListing';
 
 // Executor Pages
 import ExecutorDashboard from './pages/executor/Dashboard';
@@ -65,8 +66,9 @@ function App() {
               <Route element={<CustomerLayout />}>
                 <Route path="/customer/dashboard" element={<CustomerDashboard />} />
                 <Route path="/customer/listings" element={<CustomerListings />} />
-                <Route path="/customer/listings/:id" element={<CustomerListingDetail />} />
                 <Route path="/customer/listings/create" element={<CustomerCreateListing />} />
+                <Route path="/customer/listings/:id" element={<CustomerListingDetail />} />
+                <Route path="/customer/listings/:id/edit" element={<CustomerEditListing />} />
                 <Route path="/customer/profile" element={<CustomerProfile />} />
               </Route>
             </Route>

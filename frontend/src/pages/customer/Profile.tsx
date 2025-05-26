@@ -36,11 +36,13 @@ const Profile = () => {
       try {
         // Получаем данные профиля пользователя
         const profileResponse = await userAPI.getProfile();
-        setProfile(profileResponse.data);
+        setProfile(profileResponse.data.user);
 
-        // Получаем данные компании пользователя
-        const companyResponse = await companyAPI.getCompanyProfile();
-        setCompany(companyResponse.data);
+        // Получаем данные компании пользователя, если они есть
+        if (profileResponse.data.user?.company_id) {
+          const companyResponse = await companyAPI.getCompanyProfile();
+          setCompany(companyResponse.data.company);
+        }
         
         setError(null);
       } catch (err) {

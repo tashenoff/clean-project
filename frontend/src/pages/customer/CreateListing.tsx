@@ -109,31 +109,44 @@ const CustomerCreateListing: React.FC = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent, shouldPublish: boolean = false) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
-    // Валидация формы
-    if (!validateForm()) {
-      setError('Пожалуйста, исправьте ошибки в форме');
-      return;
-    }
     
     try {
       setLoading(true);
       
-      const listingDataToSubmit = {
+      // Submit listing creation request
+      const response = await listingsAPI.createListing(formData);
+      
+      // Navigate to the new listing detail page with success parameter
+      navigate(`/customer/listings/${response.data.listing_id}?new=true`);
+    } catch (err: any) {
+      console.error('Error creating listing:', err);
+      setError(err.response?.data?.error || 'Failed to create listing. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePublish = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    try {
+      setLoading(true);
+      
+      // Set status to published and submit
+      const response = await listingsAPI.createListing({
         ...formData,
-        status: shouldPublish ? 'published' as const : 'unpublished' as const
-      };
+        status: 'published'
+      });
       
-      console.log('Submitting listing data:', listingDataToSubmit);
-      const response = await listingsAPI.createListing(listingDataToSubmit);
-      
-      console.log('Listing created successfully:', response.data);
-      navigate(`/customer/listings/${response.data.listing_id}`);
-    } catch (err) {
-      handleError(err);
+      // Navigate to the new listing detail page with success parameter
+      navigate(`/customer/listings/${response.data.listing_id}?new=true`);
+    } catch (err: any) {
+      console.error('Error publishing listing:', err);
+      setError(err.response?.data?.error || 'Failed to publish listing. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -150,7 +163,7 @@ const CustomerCreateListing: React.FC = () => {
       )}
       
       <div className="bg-white p-6 rounded-lg shadow-sm">
-        <form onSubmit={(e) => handleSubmit(e, false)}>
+        <form onSubmit={(e) => handleSubmit(e)}>
           {/* Basic Information */}
           <div className="mb-6">
             <h2 className="text-lg font-semibold mb-4">Основная информация</h2>
@@ -478,7 +491,7 @@ const CustomerCreateListing: React.FC = () => {
             
             <button
               type="button"
-              onClick={(e) => handleSubmit(e, true)}
+              onClick={(e) => handlePublish(e)}
               disabled={loading}
               className={`px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
                 loading ? 'opacity-70 cursor-not-allowed' : ''

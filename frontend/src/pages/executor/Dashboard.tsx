@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { userAPI, listingsAPI } from '../../api/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { Link } from 'react-router-dom';
 
 const ExecutorDashboard: React.FC = () => {
   const { user } = useAuth();
@@ -118,9 +119,12 @@ const ExecutorDashboard: React.FC = () => {
                   <span className="text-xs text-gray-400">
                     {new Date(listing.created_at).toLocaleDateString()}
                   </span>
-                  <button className="bg-primary hover:bg-primary-dark text-white text-xs px-3 py-1 rounded">
+                  <Link 
+                    to={`/executor/listings/${listing.id}`}
+                    className="bg-primary hover:bg-primary-dark text-white text-xs px-3 py-1 rounded"
+                  >
                     View Details
-                  </button>
+                  </Link>
                 </div>
               </div>
             ))}
@@ -153,15 +157,24 @@ const ExecutorDashboard: React.FC = () => {
       <div className="mt-6">
         <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button className="bg-primary hover:bg-primary-dark text-white py-3 px-4 rounded-lg shadow-sm">
+          <Link 
+            to="/executor/listings" 
+            className="bg-primary hover:bg-primary-dark text-white py-3 px-4 rounded-lg shadow-sm text-center"
+          >
             Browse All Listings
-          </button>
-          <button className="bg-secondary hover:bg-secondary-dark text-white py-3 px-4 rounded-lg shadow-sm">
+          </Link>
+          <Link 
+            to="/executor/responses" 
+            className="bg-secondary hover:bg-secondary-dark text-white py-3 px-4 rounded-lg shadow-sm text-center"
+          >
             View My Responses
-          </button>
-          <button className="bg-gray-600 hover:bg-gray-700 text-white py-3 px-4 rounded-lg shadow-sm">
+          </Link>
+          <Link 
+            to="/executor/profile" 
+            className="bg-gray-600 hover:bg-gray-700 text-white py-3 px-4 rounded-lg shadow-sm text-center"
+          >
             Update Profile
-          </button>
+          </Link>
         </div>
       </div>
     </div>

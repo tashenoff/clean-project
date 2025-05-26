@@ -3,18 +3,46 @@ import { useNavigate } from 'react-router-dom';
 import { userAPI, companyAPI, responsesAPI } from '../../api/api';
 import { useAuth } from '../../contexts/AuthContext';
 
+interface ProfileData {
+  id: number;
+  name?: string;
+  email: string;
+  phone?: string;
+  city?: string;
+  country?: string;
+  created_at: string;
+  executor_profile?: {
+    points: number;
+    experience_level: string;
+  };
+}
+
+interface CompanyData {
+  id: number;
+  name: string;
+  bin: string;
+  address: string;
+  status: string;
+}
+
+interface Stats {
+  totalResponses: number;
+  acceptedResponses: number;
+  rejectedResponses: number;
+}
+
 const Profile = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [profile, setProfile] = useState(null);
-  const [company, setCompany] = useState(null);
-  const [stats, setStats] = useState({
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [company, setCompany] = useState<CompanyData | null>(null);
+  const [stats, setStats] = useState<Stats>({
     totalResponses: 0,
     acceptedResponses: 0,
     rejectedResponses: 0
   });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -22,11 +50,12 @@ const Profile = () => {
       try {
         // Получаем данные профиля пользователя
         const profileResponse = await userAPI.getProfile();
-        setProfile(profileResponse.data);
+        setProfile(profileResponse.data.user);
 
         // Получаем данные компании пользователя
-        const companyResponse = await companyAPI.getCompany();
-        setCompany(companyResponse.data);
+        if (profileResponse.data.company) {
+          setCompany(profileResponse.data.company);
+        }
         
         // Получаем статистику откликов из API
         const responsesResponse = await responsesAPI.getMyResponses({
@@ -35,8 +64,8 @@ const Profile = () => {
         });
         
         // Рассчитываем статистику на основе полученных данных
-        const responses = responsesResponse.data.responses;
-        const totalResponses = responsesResponse.data.total;
+        const responses = responsesResponse.data.responses || [];
+        const totalResponses = responsesResponse.data.total || 0;
         const acceptedResponses = responses.filter(r => r.status === 'accepted').length;
         const rejectedResponses = responses.filter(r => r.status === 'rejected').length;
         
@@ -97,10 +126,10 @@ const Profile = () => {
             <p className="text-gray-600">{user?.email}</p>
             <div className="mt-2 flex items-center">
               <span className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded">
-                {profile?.experience_level || 'НОВИЧОК'}
+                {profile?.executor_profile?.experience_level || 'НОВИЧОК'}
               </span>
               <span className="ml-2 text-sm text-gray-600">
-                {profile?.points || 0} баллов
+                {profile?.executor_profile?.points || 0} баллов
               </span>
             </div>
           </div>

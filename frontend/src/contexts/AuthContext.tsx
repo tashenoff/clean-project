@@ -29,247 +29,197 @@ interface AuthContextType {
   logout: () => Promise<void>;
   registerStep1: (userData: { email: string; password: string; role: string }) => Promise<void>;
   registerStep2: (companyData: { name: string; bin: string; address: string }) => Promise<void>;
-  updateUser: (userData: User) => void;
-  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem('user');
-    return savedUser ? JSON.parse(savedUser) : null;
+    const storedUser = localStorage.getItem('user');
+    return storedUser ? JSON.parse(storedUser) : null;
   });
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return !!localStorage.getItem('token');
+  });
   const verifyingRef = useRef<boolean>(false);
+  const verificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Функция для синхронизации состояния аутентификации
   const updateAuthState = (newUser: User | null, token?: string) => {
     console.log('Updating auth state:', { 
       hasUser: !!newUser, 
       hasToken: !!token,
-      userRole: newUser?.role
+      userRole: newUser?.role 
     });
 
-    if (newUser && token) {
+    if (token) {
       localStorage.setItem('token', token);
+    }
+
+    if (newUser) {
       localStorage.setItem('user', JSON.stringify(newUser));
       setUser(newUser);
       setIsAuthenticated(true);
-      setError(null);
     } else {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       setUser(null);
       setIsAuthenticated(false);
-      setError(null);
     }
   };
 
-  const handleAuthError = (err: unknown) => {
-    if (err instanceof AxiosError) {
-      const errorMessage = err.response?.data?.error || err.message;
-      console.error('Auth error:', {
-        status: err.response?.status,
-        message: errorMessage,
-        data: err.response?.data
-      });
-      setError(errorMessage);
-    } else if (err instanceof Error) {
-      console.error('Auth error:', err.message);
-      setError(err.message);
-    } else {
-      console.error('Unknown auth error:', err);
-      setError('An unexpected error occurred');
+  // Функция для верификации токена
+  const verifyToken = async () => {
+    if (verifyingRef.current) {
+      console.log('Verification already in progress, skipping');
+      return;
     }
-    updateAuthState(null);
-  };
 
-  // Check if user is already logged in
-  useEffect(() => {
-    const checkAuth = async () => {
-      if (verifyingRef.current) {
-        console.log('Verification already in progress, skipping...');
-        return;
-      }
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.log('No token found, clearing auth state');
+      updateAuthState(null);
+      setLoading(false);
+      return;
+    }
 
-      console.log('Checking authentication state...');
+    try {
       verifyingRef.current = true;
+      console.log('Starting token verification');
       
-      try {
-        const token = localStorage.getItem('token');
-        const savedUser = localStorage.getItem('user');
+      const response = await authAPI.verifyToken();
+      const verifiedData = response.data;
+      
+      // Если у нас есть сохраненные данные пользователя, объединяем их с данными верификации
+      const storedUser = localStorage.getItem('user');
+      const currentUser = storedUser ? JSON.parse(storedUser) : null;
+      
+      if (currentUser && verifiedData.user_id === currentUser.id) {
+        // Обновляем только критические поля из верификации
+        const updatedUser = {
+          ...currentUser,
+          role: verifiedData.role
+        };
+        updateAuthState(updatedUser);
+      } else {
+        // Если нет сохраненных данных или ID не совпадает, используем данные верификации
+        const newUser = {
+          id: verifiedData.user_id,
+          role: verifiedData.role,
+          email: verifiedData.email || '',
+        };
+        updateAuthState(newUser);
+      }
+    } catch (error) {
+      console.error('Token verification failed:', error);
+      updateAuthState(null);
+    } finally {
+      verifyingRef.current = false;
+      setLoading(false);
+    }
+  };
 
-        if (!token || !savedUser) {
-          console.log('No stored auth data found');
-          updateAuthState(null);
-          return;
-        }
-
-        // Verify token and get fresh user data
-        const response = await authAPI.verifyToken();
-        const verificationData = response.data;
-        
-        if (!verificationData.user_id || !verificationData.role) {
-          throw new Error('Invalid verification data received');
-        }
-
-        // Проверяем соответствие сохраненных данных с верификацией
-        const parsedUser = JSON.parse(savedUser) as User;
-        if (parsedUser.id === verificationData.user_id && parsedUser.role === verificationData.role) {
-          console.log('Token verification successful, user data matches');
-          updateAuthState(parsedUser, token);
-        } else {
-          console.log('User data mismatch, clearing auth state');
-          throw new Error('User data mismatch');
-        }
-      } catch (err) {
-        console.error('Auth check failed:', err);
-        updateAuthState(null);
-      } finally {
-        verifyingRef.current = false;
-        setLoading(false);
+  useEffect(() => {
+    // Очищаем предыдущий таймаут при размонтировании
+    return () => {
+      if (verificationTimeoutRef.current) {
+        clearTimeout(verificationTimeoutRef.current);
       }
     };
+  }, []);
 
-    checkAuth();
-
-    return () => {
-      verifyingRef.current = false;
-    };
+  useEffect(() => {
+    // Запускаем верификацию только если есть токен
+    if (localStorage.getItem('token')) {
+      // Добавляем небольшую задержку перед верификацией
+      verificationTimeoutRef.current = setTimeout(() => {
+        verifyToken();
+      }, 100);
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   const login = async (email: string, password: string): Promise<User> => {
     try {
-      setLoading(true);
       setError(null);
-      
-      console.log('Attempting login for:', email);
       const response = await authAPI.login({ email, password });
-      
-      if (!response.data.token || !response.data.user) {
-        throw new Error('Invalid response format from login');
-      }
-      
-      console.log('Login successful:', {
-        user: response.data.user,
-        hasToken: !!response.data.token
-      });
-      
-      updateAuthState(response.data.user, response.data.token);
-      return response.data.user;
-    } catch (err) {
-      console.error('Login failed:', err);
-      updateAuthState(null);
-      throw err;
-    } finally {
-      setLoading(false);
+      const { user: newUser, token } = response.data;
+      updateAuthState(newUser, token);
+      return newUser;
+    } catch (error) {
+      const message = error instanceof AxiosError 
+        ? error.response?.data?.error || 'Login failed'
+        : 'An unexpected error occurred';
+      setError(message);
+      throw error;
     }
   };
 
-  const logout = async () => {
+  const logout = async (): Promise<void> => {
     try {
-      setLoading(true);
-      console.log('Logging out...');
-      
-      // Сначала очищаем состояние на клиенте
-      updateAuthState(null);
-      sessionStorage.removeItem('loginForm');
-      
-      // Затем делаем запрос на сервер
       await authAPI.logout();
-      
-      console.log('Logout completed successfully');
-    } catch (err) {
-      console.error('Logout error:', err);
-      // Состояние уже очищено в начале функции
+    } catch (error) {
+      console.error('Logout error:', error);
     } finally {
-      setLoading(false);
+      updateAuthState(null);
     }
   };
 
-  const registerStep1 = async (userData: { email: string; password: string; role: string }) => {
+  const registerStep1 = async (userData: { email: string; password: string; role: string }): Promise<void> => {
     try {
-      setLoading(true);
       setError(null);
-      
-      console.log('Attempting registration step 1:', { email: userData.email, role: userData.role });
       const response = await authAPI.registerStep1(userData);
-      
-      if (!response.data.token || !response.data.user) {
-        throw new Error('Invalid response format from registration');
-      }
-      
-      console.log('Registration step 1 successful:', response.data.user);
-      updateAuthState(response.data.user, response.data.token);
-    } catch (err) {
-      console.error('Registration step 1 failed:', err);
-      handleAuthError(err);
-      throw err;
-    } finally {
-      setLoading(false);
+      const { user: newUser, token } = response.data;
+      updateAuthState(newUser, token);
+    } catch (error) {
+      const message = error instanceof AxiosError 
+        ? error.response?.data?.error || 'Registration failed'
+        : 'An unexpected error occurred';
+      setError(message);
+      throw error;
     }
   };
 
-  const registerStep2 = async (companyData: { name: string; bin: string; address: string }) => {
+  const registerStep2 = async (companyData: { name: string; bin: string; address: string }): Promise<void> => {
     try {
-      setLoading(true);
       setError(null);
-      
-      console.log('Attempting registration step 2:', companyData);
       const response = await authAPI.registerStep2(companyData);
-      
-      if (!response.data.user) {
-        throw new Error('Invalid response format from registration step 2');
-      }
-      
-      console.log('Registration step 2 successful:', response.data.user);
-      updateAuthState(response.data.user);
-    } catch (err) {
-      console.error('Registration step 2 failed:', err);
-      handleAuthError(err);
-      throw err;
-    } finally {
-      setLoading(false);
+      const { user: updatedUser } = response.data;
+      updateAuthState(updatedUser);
+    } catch (error) {
+      const message = error instanceof AxiosError 
+        ? error.response?.data?.error || 'Company registration failed'
+        : 'An unexpected error occurred';
+      setError(message);
+      throw error;
     }
-  };
-
-  const updateUser = (userData: User) => {
-    setUser(userData);
-  };
-
-  const clearError = () => {
-    setError(null);
-  };
-
-  const value = {
-    user,
-    loading,
-    error,
-    isAuthenticated,
-    login,
-    logout,
-    registerStep1,
-    registerStep2,
-    updateUser,
-    clearError
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        error,
+        isAuthenticated,
+        login,
+        logout,
+        registerStep1,
+        registerStep2
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-export default AuthContext;

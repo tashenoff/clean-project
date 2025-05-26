@@ -13,29 +13,59 @@ const ExecutorListingDetail: React.FC = () => {
 
   useEffect(() => {
     const fetchListingData = async () => {
-      if (!id) return;
+      if (!id) {
+        console.log('No listing ID provided');
+        setError('Invalid listing ID');
+        return;
+      }
       
       try {
         setLoading(true);
+        console.log('Fetching listing details for ID:', id);
+        
         // Fetch listing details
         const listingResponse = await listingsAPI.getListing(Number(id));
-        setListing(listingResponse.data);
+        console.log('Received listing response:', listingResponse);
         
-        // Check if user has already responded to this listing
-        try {
-          const responsesResponse = await responsesAPI.getMyResponses({
-            listing_id: Number(id)
-          });
-          
-          if (responsesResponse.data.responses.length > 0) {
-            setResponse(responsesResponse.data.responses[0]);
-          }
-        } catch (error) {
-          console.error('Error checking for existing response:', error);
+        if (!listingResponse.data) {
+          console.error('No data in response');
+          setError('Failed to load listing details: No data received');
+          return;
         }
-      } catch (error) {
+
+        const { listing: listingData, owner, responses: responsesData } = listingResponse.data;
+
+        if (!listingData) {
+          console.error('No listing data in response');
+          setError('Failed to load listing details: Invalid data format');
+          return;
+        }
+
+        // Объединяем данные объявления с данными владельца
+        const combinedData = {
+          ...listingData,
+          contact_name: owner?.first_name && owner?.last_name 
+            ? `${owner.first_name} ${owner.last_name}` 
+            : owner?.company_name || 'Not specified',
+          contact_email: owner?.email || 'Not specified',
+          contact_phone: owner?.phone || 'Not specified',
+          location: owner?.city && owner?.country ? `${owner.city}, ${owner.country}` : 'Not specified',
+          budget: listingData.budget || 'Not specified',
+          deadline: listingData.delivery_date || 'Not specified',
+          purchase_method: listingData.purchase_method || 'Not specified',
+          payment_terms: listingData.payment_terms || 'Not specified',
+          listing_type: listingData.listing_type || 'Not specified',
+          publication_period: listingData.publication_period || 'Not specified',
+          owner,
+          responses: responsesData
+        };
+        
+        console.log('Combined listing data:', combinedData);
+        setListing(combinedData);
+      } catch (error: any) {
         console.error('Error fetching listing data:', error);
-        setError('Failed to load listing details. Please try again later.');
+        const errorMessage = error.response?.data?.error || error.message || 'Failed to load listing details. Please try again later.';
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -122,160 +152,112 @@ const ExecutorListingDetail: React.FC = () => {
   }
 
   return (
-    <div>
+    <div className="bg-white p-6 rounded-lg shadow-sm">
       {/* Header */}
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{listing.title}</h1>
-          <div className="flex items-center mt-2 space-x-4">
-            <div>{getStatusBadge(listing.status)}</div>
-            <div className="text-sm text-gray-500">
-              Created: {new Date(listing.created_at).toLocaleDateString()}
-            </div>
-            <div className="text-sm text-gray-500">
-              Category: {listing.category}
-            </div>
-          </div>
-        </div>
-        <div>
-          {listing.budget && (
-            <div className="text-xl font-bold text-secondary">
-              ${listing.budget}
-            </div>
-          )}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold mb-2">{listing.title}</h1>
+        <div className="flex items-center space-x-4 text-sm text-gray-500">
+          <span>Категория: {listing.category}</span>
+          <span>•</span>
+          <span>Создано: {new Date(listing.created_at).toLocaleDateString()}</span>
         </div>
       </div>
 
-      {/* Listing Details */}
-      <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
-        <h2 className="text-lg font-semibold mb-4">Description</h2>
-        <p className="text-gray-700 whitespace-pre-line mb-6">{listing.description}</p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h3 className="text-md font-semibold mb-2">Details</h3>
-            <div className="space-y-2">
-              <div className="flex">
-                <span className="font-medium w-32">Budget:</span>
-                <span>{listing.budget ? `$${listing.budget}` : 'Not specified'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-medium w-32">Location:</span>
-                <span>{listing.location || 'Not specified'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-medium w-32">Deadline:</span>
-                <span>
-                  {listing.deadline 
-                    ? new Date(listing.deadline).toLocaleDateString() 
-                    : 'Not specified'}
-                </span>
-              </div>
+      {/* Description */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold mb-4">Описание</h2>
+        <p className="text-gray-700 whitespace-pre-line">{listing.description}</p>
+      </div>
+
+      {/* Details Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Left Column - Details */}
+        <div>
+          <h3 className="text-lg font-semibold mb-4">Детали</h3>
+          <div className="space-y-3">
+            <div className="flex">
+              <span className="font-medium w-32">Тип заявки:</span>
+              <span className="text-gray-700">{listing.listing_type}</span>
+            </div>
+            <div className="flex">
+              <span className="font-medium w-32">Способ закупки:</span>
+              <span className="text-gray-700">{listing.purchase_method}</span>
+            </div>
+            <div className="flex">
+              <span className="font-medium w-32">Условия оплаты:</span>
+              <span className="text-gray-700">{listing.payment_terms}</span>
+            </div>
+            <div className="flex">
+              <span className="font-medium w-32">Бюджет:</span>
+              <span className="text-gray-700">{listing.budget}</span>
+            </div>
+            <div className="flex">
+              <span className="font-medium w-32">Местоположение:</span>
+              <span className="text-gray-700">{listing.location}</span>
+            </div>
+            <div className="flex">
+              <span className="font-medium w-32">Срок поставки:</span>
+              <span className="text-gray-700">
+                {listing.delivery_date 
+                  ? new Date(listing.delivery_date).toLocaleDateString() 
+                  : 'Not specified'}
+              </span>
+            </div>
+            <div className="flex">
+              <span className="font-medium w-32">Период публикации:</span>
+              <span className="text-gray-700">{listing.publication_period} дней</span>
             </div>
           </div>
-          
-          <div>
-            <h3 className="text-md font-semibold mb-2">Contact Information</h3>
-            <div className="space-y-2">
-              <div className="flex">
-                <span className="font-medium w-32">Contact Name:</span>
-                <span>{listing.contact_name || 'Not specified'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-medium w-32">Contact Email:</span>
-                <span>{listing.contact_email || 'Not specified'}</span>
-              </div>
-              <div className="flex">
-                <span className="font-medium w-32">Contact Phone:</span>
-                <span>{listing.contact_phone || 'Not specified'}</span>
-              </div>
+        </div>
+
+        {/* Right Column - Contact Information */}
+        <div>
+          <h3 className="text-lg font-semibold mb-4">Контактная информация</h3>
+          <div className="space-y-3">
+            <div className="flex">
+              <span className="font-medium w-32">Контактное лицо:</span>
+              <span className="text-gray-700">{listing.contact_name}</span>
+            </div>
+            <div className="flex">
+              <span className="font-medium w-32">Email:</span>
+              <span className="text-gray-700">{listing.contact_email}</span>
+            </div>
+            <div className="flex">
+              <span className="font-medium w-32">Телефон:</span>
+              <span className="text-gray-700">{listing.contact_phone}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Response Section */}
-      <div className="bg-white p-6 rounded-lg shadow-sm">
-        <h2 className="text-lg font-semibold mb-4">Your Response</h2>
-        
-        {response ? (
+      {/* Response Form */}
+      <div className="mt-8">
+        <h3 className="text-lg font-semibold mb-4">Откликнуться на заявку</h3>
+        <form onSubmit={handleCreateResponse} className="space-y-4">
           <div>
-            <div className="flex items-center mb-4">
-              <span className="mr-2">Status:</span>
-              {getResponseStatusBadge(response.status)}
-            </div>
-            
-            <div className="mb-4">
-              <h3 className="text-md font-medium mb-2">Your Message:</h3>
-              <p className="text-gray-700 bg-gray-50 p-4 rounded-md">{response.message}</p>
-            </div>
-            
-            <div className="text-sm text-gray-500">
-              Submitted on: {new Date(response.created_at).toLocaleString()}
-            </div>
-            
-            {response.status === 'pending' && (
-              <div className="mt-4">
-                <button
-                  onClick={async () => {
-                    try {
-                      await responsesAPI.deleteResponse(response.id);
-                      setResponse(null);
-                    } catch (error) {
-                      console.error('Error deleting response:', error);
-                      setError('Failed to delete response. Please try again.');
-                    }
-                  }}
-                  className="text-red-600 hover:text-red-900 text-sm font-medium"
-                >
-                  Delete Response
-                </button>
-              </div>
-            )}
+            <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-1">
+              Сообщение (необязательно)
+            </label>
+            <textarea
+              id="message"
+              name="message"
+              rows={4}
+              value={responseMessage}
+              onChange={(e) => setResponseMessage(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
+              placeholder="Введите ваше сообщение..."
+            />
           </div>
-        ) : listing.status === 'published' ? (
-          <div>
-            <p className="mb-4">
-              Respond to this listing to express your interest. This will cost 1 point from your balance.
-            </p>
-            
-            <div className="mb-4">
-              <label htmlFor="response-message" className="block text-sm font-medium text-gray-700 mb-1">
-                Message (optional)
-              </label>
-              <textarea
-                id="response-message"
-                rows={4}
-                value={responseMessage}
-                onChange={(e) => setResponseMessage(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-                placeholder="I'm interested in this listing and would like to offer my services."
-              ></textarea>
-            </div>
-            
+          <div className="flex justify-end">
             <button
-              onClick={handleCreateResponse}
+              type="submit"
               disabled={responseLoading}
               className="bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md disabled:opacity-50"
             >
-              {responseLoading ? 'Submitting...' : 'Submit Response (1 point)'}
+              {responseLoading ? 'Отправка...' : 'Откликнуться'}
             </button>
           </div>
-        ) : (
-          <p className="text-gray-500">
-            This listing is {listing.status} and is no longer accepting responses.
-          </p>
-        )}
-      </div>
-      
-      {/* Back Button */}
-      <div className="mt-6">
-        <Link 
-          to="/executor/listings"
-          className="text-primary hover:text-primary-dark font-medium"
-        >
-          &larr; Back to Listings
-        </Link>
+        </form>
       </div>
     </div>
   );
