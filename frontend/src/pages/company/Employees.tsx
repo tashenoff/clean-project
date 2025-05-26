@@ -1,36 +1,113 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { companyAPI } from '../../api/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { 
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell 
+} from '../../components/ui/table';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Card } from '../../components/ui/card';
+import { Alert } from '../../components/ui/alert';
+import { Dialog } from '../../components/ui/dialog';
+import { Label } from '../../components/ui/label';
+
+interface Employee {
+  id: number;
+  name: string;
+  email: string;
+  company_role: 'owner' | 'admin' | 'manager' | 'employee';
+  date_added: string;
+}
 
 const CompanyEmployees: React.FC = () => {
-  const [employees, setEmployees] = useState<any[]>([]);
+  const { id: companyId } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     name: '',
-    position: ''
+    password: '',
+    company_role: 'employee' as 'owner' | 'admin' | 'manager' | 'employee'
   });
   const [showAddForm, setShowAddForm] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
 
+  // Добавляем эффект для отслеживания изменений employees
   useEffect(() => {
-    fetchEmployees();
-  }, []);
+    if (employees.length > 0 && user?.id) {
+      const currentEmployee = employees.find(emp => emp.id === user.id);
+      if (currentEmployee) {
+        console.log('Setting current user role from employees change:', currentEmployee.company_role);
+        setCurrentUserRole(currentEmployee.company_role);
+      }
+    }
+  }, [employees, user?.id]);
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = React.useCallback(async () => {
+    if (!companyId) {
+      setError('Идентификатор компании обязателен');
+      return;
+    }
+
     try {
-      setLoading(true);
-      const response = await companyAPI.getEmployees();
-      setEmployees(response.data.employees);
-    } catch (error) {
-      console.error('Error fetching employees:', error);
-      setError('Failed to load employees. Please try again later.');
+      const response = await companyAPI.getCompanyById(Number(companyId));
+      const employeesData = response.data.employees;
+      
+      console.log('Fetched data:', {
+        userId: user?.id,
+        employeesCount: employeesData.length,
+        employees: employeesData
+      });
+
+      // Находим роль текущего пользователя в компании
+      const currentEmployee = employeesData.find((emp: any) => emp.id === user?.id);
+      console.log('Current employee:', currentEmployee);
+
+      if (currentEmployee) {
+        console.log('Setting current user role from fetch:', currentEmployee.company_role);
+        setCurrentUserRole(currentEmployee.company_role);
+      } else {
+        console.log('Current employee not found in employees list');
+        setCurrentUserRole(null);
+      }
+
+      setEmployees(employeesData);
+      setError('');
+    } catch (err: any) {
+      console.error('Error fetching employees:', err);
+      setError(err.response?.data?.error || 'Ошибка при загрузке сотрудников');
     } finally {
       setLoading(false);
     }
-  };
+  }, [companyId, user?.id]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    fetchEmployees();
+  }, [fetchEmployees]);
+
+  // Для отладки - временно добавим вывод информации о правах
+  useEffect(() => {
+    console.log('User permissions updated:', {
+      userId: user?.id,
+      company_role: user?.company_role,
+      currentUserRole,
+      canManageEmployees: currentUserRole === 'owner' || currentUserRole === 'admin' || currentUserRole === 'manager'
+    });
+  }, [user, currentUserRole]);
+
+  // Проверяем, имеет ли пользователь права на управление сотрудниками
+  const canManageEmployees = currentUserRole === 'owner' || currentUserRole === 'admin' || currentUserRole === 'manager';
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prevState => ({
       ...prevState,
@@ -40,215 +117,237 @@ const CompanyEmployees: React.FC = () => {
 
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
     
+    if (!canManageEmployees) {
+      setError('У вас нет прав на добавление сотрудников');
+      return;
+    }
+
+    if (!user?.role) {
+      setError('Не удалось определить роль текущего пользователя');
+      return;
+    }
+
     try {
-      setLoading(true);
-      await companyAPI.addEmployee(formData);
-      
-      // Reset form and refresh employees
+      await companyAPI.addEmployee({
+        email: formData.email,
+        name: formData.name,
+        password: formData.password,
+        role: user.role,
+        company_role: formData.company_role,
+        company_id: Number(companyId)
+      });
+
+      setSuccess('Сотрудник успешно добавлен');
+      setShowAddForm(false);
       setFormData({
         email: '',
         name: '',
-        position: ''
+        password: '',
+        company_role: 'employee'
       });
-      setShowAddForm(false);
-      setSuccess('Employee added successfully!');
-      
-      // Refresh employee list
-      fetchEmployees();
+
+      // Обновляем список сотрудников
+      await fetchEmployees();
     } catch (err: any) {
       console.error('Error adding employee:', err);
-      setError(err.response?.data?.error || 'Failed to add employee. Please try again.');
-    } finally {
-      setLoading(false);
+      setError(err.response?.data?.error || 'Ошибка при добавлении сотрудника');
     }
   };
 
   const handleDeleteEmployee = async (employeeId: number) => {
-    if (!window.confirm('Are you sure you want to remove this employee?')) {
+    if (!canManageEmployees) {
+      setError('У вас нет прав на удаление сотрудников');
       return;
     }
-    
+
+    if (!window.confirm('Вы уверены, что хотите удалить этого сотрудника?')) {
+      return;
+    }
+
     try {
-      setLoading(true);
-      await companyAPI.deleteEmployee(employeeId);
+      await companyAPI.removeEmployee(employeeId);
+      setSuccess('Сотрудник успешно удален');
       
-      // Refresh employee list
-      fetchEmployees();
-      setSuccess('Employee removed successfully!');
-    } catch (error) {
-      console.error('Error deleting employee:', error);
-      setError('Failed to remove employee. Please try again.');
-    } finally {
-      setLoading(false);
+      // Обновляем список сотрудников
+      await fetchEmployees();
+    } catch (err: any) {
+      console.error('Error deleting employee:', err);
+      setError(err.response?.data?.error || 'Ошибка при удалении сотрудника');
     }
   };
 
+  // Если у пользователя нет прав на управление сотрудниками, закрываем форму добавления
+  useEffect(() => {
+    if (!canManageEmployees && showAddForm) {
+      setShowAddForm(false);
+    }
+  }, [canManageEmployees, showAddForm]);
+
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Company Employees</h1>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md"
-        >
-          {showAddForm ? 'Cancel' : 'Add Employee'}
-        </button>
+        <h1 className="text-2xl font-bold">Сотрудники компании</h1>
+        {canManageEmployees && (
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
+          >
+            Добавить сотрудника
+          </button>
+        )}
       </div>
       
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6" role="alert">
-          <span className="block sm:inline">{error}</span>
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
         </div>
       )}
       
       {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-6" role="alert">
-          <span className="block sm:inline">{success}</span>
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+          {success}
         </div>
       )}
       
-      {/* Add Employee Form */}
-      {showAddForm && (
+      {showAddForm && canManageEmployees && (
         <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
-          <h2 className="text-lg font-semibold mb-4">Add New Employee</h2>
-          <form onSubmit={handleAddEmployee}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-                  placeholder="employee@example.com"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                  Name *
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-                  placeholder="John Doe"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="position" className="block text-sm font-medium text-gray-700 mb-1">
-                  Position *
-                </label>
-                <input
-                  type="text"
-                  id="position"
-                  name="position"
-                  value={formData.position}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-                  placeholder="Manager"
-                />
-              </div>
+          <h2 className="text-xl font-semibold mb-4">Добавить сотрудника</h2>
+          <form onSubmit={handleAddEmployee} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                required
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+              />
             </div>
             
-            <div className="flex justify-end">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Имя
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                required
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Пароль
+              </label>
+              <input
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                required
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Роль в компании
+              </label>
+              <select
+                name="company_role"
+                value={formData.company_role}
+                onChange={handleChange}
+                required
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="employee">Сотрудник</option>
+                <option value="manager">Менеджер</option>
+                {(currentUserRole === 'owner' || currentUserRole === 'admin') && (
+                  <option value="admin">Администратор</option>
+                )}
+              </select>
+            </div>
+
+            <div className="md:col-span-2 flex justify-end gap-4">
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+              >
+                Отмена
+              </button>
               <button
                 type="submit"
-                disabled={loading}
-                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark disabled:opacity-50"
+                className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
               >
-                {loading ? 'Adding...' : 'Add Employee'}
+                Добавить
               </button>
             </div>
           </form>
         </div>
       )}
       
-      {/* Employees List */}
-      {loading && !showAddForm ? (
+      {loading ? (
         <div className="flex justify-center items-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
         </div>
       ) : employees.length > 0 ? (
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Position
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Email
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date Added
-                </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {employees.map((employee) => (
-                <tr key={employee.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {employee.id}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{employee.name}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {employee.position}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {employee.email}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(employee.date_added).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      onClick={() => handleDeleteEmployee(employee.id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Card>
+          <div className="p-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Имя</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Роль</TableHead>
+                  <TableHead>Дата добавления</TableHead>
+                  {canManageEmployees && (
+                    <TableHead className="text-right">Действия</TableHead>
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {employees.map((employee) => (
+                  <TableRow key={employee.id}>
+                    <TableCell>{employee.name}</TableCell>
+                    <TableCell>{employee.email}</TableCell>
+                    <TableCell>{employee.company_role}</TableCell>
+                    <TableCell>{new Date(employee.date_added).toLocaleDateString()}</TableCell>
+                    {canManageEmployees && (
+                      <TableCell className="text-right">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteEmployee(employee.id)}
+                        >
+                          Удалить
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
       ) : (
-        <div className="bg-white p-6 rounded-lg shadow-sm text-center">
-          <p className="text-gray-500 mb-4">No employees found in your company.</p>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="inline-block bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md"
-          >
-            Add Your First Employee
-          </button>
-        </div>
+        <Card className="p-6 text-center">
+          <p className="text-gray-500 mb-4">В компании пока нет сотрудников.</p>
+          {canManageEmployees && (
+            <Button
+              onClick={() => setShowAddForm(true)}
+            >
+              Добавить первого сотрудника
+            </Button>
+          )}
+        </Card>
       )}
     </div>
   );

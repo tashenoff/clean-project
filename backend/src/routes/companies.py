@@ -111,8 +111,11 @@ def add_employee(current_user, company_id):
     try:
         # Check if user is company owner or admin
         company_user = conn.execute('''
-            SELECT * FROM company_users 
-            WHERE company_id = ? AND user_id = ? AND role IN ('owner', 'admin')
+            SELECT cu.*, u.role as user_role 
+            FROM company_users cu
+            JOIN users u ON u.id = cu.user_id
+            WHERE cu.company_id = ? AND cu.user_id = ? 
+            AND (cu.role IN ('owner', 'admin') OR u.role = 'executor')
         ''', (company_id, current_user['id'])).fetchone()
         
         if not company_user:
@@ -294,8 +297,11 @@ def add_balance(current_user, company_id):
     try:
         # Check if user is company owner or admin
         company_user = conn.execute('''
-            SELECT * FROM company_users 
-            WHERE company_id = ? AND user_id = ? AND role IN ('owner', 'admin')
+            SELECT cu.*, u.role as user_role 
+            FROM company_users cu
+            JOIN users u ON u.id = cu.user_id
+            WHERE cu.company_id = ? AND cu.user_id = ? 
+            AND (cu.role IN ('owner', 'admin') OR u.role = 'executor')
         ''', (company_id, current_user['id'])).fetchone()
         
         if not company_user:
@@ -354,8 +360,11 @@ def add_employee_balance(current_user, company_id, user_id):
     try:
         # Check if user is company owner or admin
         company_user = conn.execute('''
-            SELECT * FROM company_users 
-            WHERE company_id = ? AND user_id = ? AND role IN ('owner', 'admin')
+            SELECT cu.*, u.role as user_role 
+            FROM company_users cu
+            JOIN users u ON u.id = cu.user_id
+            WHERE cu.company_id = ? AND cu.user_id = ? 
+            AND (cu.role IN ('owner', 'admin') OR u.role = 'executor')
         ''', (company_id, current_user['id'])).fetchone()
         
         if not company_user:
@@ -363,8 +372,10 @@ def add_employee_balance(current_user, company_id, user_id):
         
         # Check if target user belongs to company
         target_user = conn.execute('''
-            SELECT * FROM company_users 
-            WHERE company_id = ? AND user_id = ?
+            SELECT u.*, cu.role as company_role
+            FROM users u
+            JOIN company_users cu ON u.id = cu.user_id
+            WHERE cu.company_id = ? AND u.id = ?
         ''', (company_id, user_id)).fetchone()
         
         if not target_user:
@@ -386,42 +397,45 @@ def add_employee_balance(current_user, company_id, user_id):
         if company['balance'] < data['amount']:
             return jsonify({'error': 'Insufficient company balance'}), 400
         
-        # Get executor profile
-        executor = conn.execute('SELECT * FROM executor_profiles WHERE user_id = ?', (user_id,)).fetchone()
+        # Begin transaction
+        conn.execute('BEGIN TRANSACTION')
         
-        if not executor:
-            return jsonify({'error': 'User is not an executor'}), 400
-        
-        # Update company balance
-        new_company_balance = company['balance'] - data['amount']
-        conn.execute('UPDATE companies SET balance = ? WHERE id = ?', (new_company_balance, company_id))
-        
-        # Update executor points
-        new_points = executor['points'] + data['amount']
-        conn.execute('UPDATE executor_profiles SET points = ? WHERE user_id = ?', (new_points, user_id))
-        
-        # Record transaction
-        conn.execute('''
-            INSERT INTO balance_transactions (company_id, user_id, amount, transaction_type, description) 
-            VALUES (?, ?, ?, ?, ?)
-        ''', (
-            company_id, 
-            user_id, 
-            data['amount'], 
-            'transfer', 
-            data.get('description', 'Balance transfer to employee')
-        ))
-        
-        conn.commit()
-        
-        return jsonify({
-            'message': 'Balance added to employee successfully',
-            'new_company_balance': new_company_balance,
-            'new_employee_points': new_points
-        }), 200
+        try:
+            # Update company balance
+            new_company_balance = company['balance'] - data['amount']
+            conn.execute('UPDATE companies SET balance = ? WHERE id = ?', 
+                       (new_company_balance, company_id))
+            
+            # Update user balance
+            new_user_balance = target_user['balance'] + data['amount']
+            conn.execute('UPDATE users SET balance = ? WHERE id = ?', 
+                       (new_user_balance, user_id))
+            
+            # Record transaction
+            conn.execute('''
+                INSERT INTO balance_transactions (company_id, user_id, amount, transaction_type, description) 
+                VALUES (?, ?, ?, ?, ?)
+            ''', (
+                company_id, 
+                user_id, 
+                data['amount'], 
+                'transfer', 
+                data.get('description', 'Balance transfer to employee')
+            ))
+            
+            conn.commit()
+            
+            return jsonify({
+                'message': 'Balance added to employee successfully',
+                'new_company_balance': new_company_balance,
+                'new_user_balance': new_user_balance
+            }), 200
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
         
     except Exception as e:
-        conn.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()

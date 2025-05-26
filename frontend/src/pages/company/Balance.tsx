@@ -1,13 +1,47 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { companyAPI } from '../../api/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { Alert } from '../../components/ui/alert';
+import { Button } from '../../components/ui/button';
+import { Card } from '../../components/ui/card';
+import { Input } from '../../components/ui/input';
+import { 
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell 
+} from '../../components/ui/table';
+import { Select } from '../../components/ui/select';
+
+interface BalanceData {
+  balance: number;
+  max_balance: number;
+  transactions: Transaction[];
+}
+
+interface Transaction {
+  id: number;
+  amount: number;
+  transaction_type: string;
+  description: string;
+  created_at: string;
+}
+
+interface Employee {
+  id: number;
+  name: string;
+  email: string;
+  company_role: string;
+}
 
 const CompanyBalance: React.FC = () => {
-  const [balance, setBalance] = useState({
-    current: 0,
-    max: 0,
-    used: 0
-  });
-  const [employees, setEmployees] = useState<any[]>([]);
+  const { id: companyId } = useParams<{ id: string }>();
+  const { updateUserBalance } = useAuth();
+  const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -21,27 +55,25 @@ const CompanyBalance: React.FC = () => {
 
   useEffect(() => {
     fetchCompanyData();
-  }, []);
+  }, [companyId]);
 
   const fetchCompanyData = async () => {
+    if (!companyId) return;
+
     try {
       setLoading(true);
       
       // Fetch company balance
-      const balanceResponse = await companyAPI.getBalance();
-      setBalance({
-        current: balanceResponse.data.current_balance,
-        max: balanceResponse.data.max_balance,
-        used: balanceResponse.data.used_balance
-      });
+      const balanceResponse = await companyAPI.getBalance(Number(companyId));
+      setBalanceData(balanceResponse.data);
       
       // Fetch employees
-      const employeesResponse = await companyAPI.getEmployees();
+      const employeesResponse = await companyAPI.getCompanyById(Number(companyId));
       setEmployees(employeesResponse.data.employees);
       
       // Initialize distribution data
       const initialDistribution: {[key: number]: string} = {};
-      employeesResponse.data.employees.forEach((employee: any) => {
+      employeesResponse.data.employees.forEach((employee: Employee) => {
         initialDistribution[employee.id] = '0';
       });
       setDistributionData(initialDistribution);
@@ -70,14 +102,15 @@ const CompanyBalance: React.FC = () => {
 
   const handleAddBalance = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!companyId) return;
+
     setError('');
     setSuccess('');
     
     try {
       setLoading(true);
-      await companyAPI.addBalance({
-        amount: parseInt(formData.amount),
-        payment_method: formData.payment_method
+      await companyAPI.addBalance(Number(companyId), {
+        amount: parseInt(formData.amount)
       });
       
       // Reset form and refresh data
@@ -86,13 +119,13 @@ const CompanyBalance: React.FC = () => {
         payment_method: 'credit_card'
       });
       setShowAddForm(false);
-      setSuccess('Balance added successfully!');
+      setSuccess('Баланс успешно пополнен!');
       
       // Refresh company data
       fetchCompanyData();
     } catch (err: any) {
       console.error('Error adding balance:', err);
-      setError(err.response?.data?.error || 'Failed to add balance. Please try again.');
+      setError(err.response?.data?.error || 'Ошибка при пополнении баланса. Попробуйте снова.');
     } finally {
       setLoading(false);
     }
@@ -100,6 +133,8 @@ const CompanyBalance: React.FC = () => {
 
   const handleDistributeBalance = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!companyId || !balanceData) return;
+
     setError('');
     setSuccess('');
     
@@ -108,242 +143,255 @@ const CompanyBalance: React.FC = () => {
       (sum, value) => sum + parseInt(value || '0'), 0
     );
     
-    if (totalDistribution > balance.current) {
-      setError(`Cannot distribute more than available balance (${balance.current} points).`);
+    if (totalDistribution > balanceData.balance) {
+      setError(`Нельзя распределить больше доступного баланса (${balanceData.balance} points).`);
       return;
     }
     
     try {
       setLoading(true);
       
-      // Format distribution data for API
-      const distributions = Object.entries(distributionData).map(([employeeId, amount]) => ({
-        employee_id: parseInt(employeeId),
-        amount: parseInt(amount || '0')
-      })).filter(item => item.amount > 0);
-      
-      await companyAPI.distributeBalance({ distributions });
+      // Distribute balance to each employee
+      for (const [employeeId, amount] of Object.entries(distributionData)) {
+        const points = parseInt(amount || '0');
+        if (points > 0) {
+          await companyAPI.addEmployeeBalance(Number(companyId), parseInt(employeeId), {
+            amount: points,
+            description: 'Распределение баланса сотруднику'
+          });
+        }
+      }
       
       // Reset form and refresh data
       setShowDistributeForm(false);
-      setSuccess('Balance distributed successfully!');
+      setSuccess('Баланс успешно распределен!');
+      
+      // Обновляем баланс текущего пользователя
+      await updateUserBalance();
       
       // Refresh company data
       fetchCompanyData();
     } catch (err: any) {
       console.error('Error distributing balance:', err);
-      setError(err.response?.data?.error || 'Failed to distribute balance. Please try again.');
+      setError(err.response?.data?.error || 'Ошибка при распределении баланса. Попробуйте снова.');
     } finally {
       setLoading(false);
     }
   };
 
+  if (loading && !balanceData) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
   return (
-    <div>
+    <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Company Balance</h1>
+        <h1 className="text-2xl font-bold">Баланс компании</h1>
         <div className="space-x-2">
-          <button
+          <Button
             onClick={() => {
               setShowAddForm(!showAddForm);
               setShowDistributeForm(false);
             }}
-            className="bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md"
+            variant="default"
           >
-            {showAddForm ? 'Cancel' : 'Add Balance'}
-          </button>
-          <button
+            {showAddForm ? 'Отмена' : 'Пополнить баланс'}
+          </Button>
+          <Button
             onClick={() => {
               setShowDistributeForm(!showDistributeForm);
               setShowAddForm(false);
             }}
-            disabled={balance.current === 0 || employees.length === 0}
-            className="bg-secondary hover:bg-secondary-dark text-white py-2 px-4 rounded-md disabled:opacity-50"
+            variant="secondary"
+            disabled={!balanceData?.balance || employees.length === 0}
           >
-            {showDistributeForm ? 'Cancel' : 'Distribute Balance'}
-          </button>
+            {showDistributeForm ? 'Отмена' : 'Распределить баланс'}
+          </Button>
         </div>
       </div>
       
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-6" role="alert">
-          <span className="block sm:inline">{error}</span>
-        </div>
-      )}
-      
-      {success && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-6" role="alert">
-          <span className="block sm:inline">{success}</span>
-        </div>
-      )}
+      {error && <Alert variant="destructive">{error}</Alert>}
+      {success && <Alert variant="default">{success}</Alert>}
       
       {/* Balance Overview */}
-      <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
-        <h2 className="text-lg font-semibold mb-4">Balance Overview</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Available Balance</h3>
-            <p className="text-2xl font-bold text-primary">{balance.current} points</p>
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Maximum Balance</h3>
-            <p className="text-2xl font-bold">{balance.max} points</p>
-          </div>
-          <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Used Balance</h3>
-            <p className="text-2xl font-bold text-secondary">{balance.used} points</p>
+      <Card className="mb-6">
+        <div className="p-6">
+          <h2 className="text-lg font-semibold mb-4">Обзор баланса</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">Доступный баланс</h3>
+              <p className="text-2xl font-bold text-primary">{balanceData?.balance || 0} points</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">Максимальный баланс</h3>
+              <p className="text-2xl font-bold">{balanceData?.max_balance || 0} points</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-500 mb-1">История транзакций</h3>
+              <p className="text-2xl font-bold text-secondary">{balanceData?.transactions.length || 0}</p>
+            </div>
           </div>
         </div>
-      </div>
+      </Card>
       
       {/* Add Balance Form */}
       {showAddForm && (
-        <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
-          <h2 className="text-lg font-semibold mb-4">Add Balance</h2>
-          <form onSubmit={handleAddBalance}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-1">
-                  Amount (points) *
-                </label>
-                <input
-                  type="number"
-                  id="amount"
-                  name="amount"
-                  value={formData.amount}
-                  onChange={handleChange}
-                  required
-                  min="1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-                  placeholder="Enter amount"
-                />
+        <Card className="mb-6">
+          <div className="p-6">
+            <h2 className="text-lg font-semibold mb-4">Пополнить баланс</h2>
+            <form onSubmit={handleAddBalance}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Сумма (points) *
+                  </label>
+                  <Input
+                    type="number"
+                    name="amount"
+                    value={formData.amount}
+                    onChange={handleChange}
+                    required
+                    min="1"
+                    placeholder="Введите сумму"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Способ оплаты *
+                  </label>
+                  <Select
+                    name="payment_method"
+                    value={formData.payment_method}
+                    onValueChange={(value) => handleChange({
+                      target: { name: 'payment_method', value }
+                    } as React.ChangeEvent<HTMLSelectElement>)}
+                  >
+                    <option value="credit_card">Кредитная карта</option>
+                    <option value="bank_transfer">Банковский перевод</option>
+                    <option value="paypal">PayPal</option>
+                  </Select>
+                </div>
               </div>
               
-              <div>
-                <label htmlFor="payment_method" className="block text-sm font-medium text-gray-700 mb-1">
-                  Payment Method *
-                </label>
-                <select
-                  id="payment_method"
-                  name="payment_method"
-                  value={formData.payment_method}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-                >
-                  <option value="credit_card">Credit Card</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="paypal">PayPal</option>
-                </select>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={loading}>
+                  {loading ? 'Обработка...' : 'Пополнить баланс'}
+                </Button>
               </div>
-            </div>
-            
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark disabled:opacity-50"
-              >
-                {loading ? 'Processing...' : 'Add Balance'}
-              </button>
-            </div>
-          </form>
-        </div>
+            </form>
+          </div>
+        </Card>
       )}
       
       {/* Distribute Balance Form */}
       {showDistributeForm && (
-        <div className="bg-white p-6 rounded-lg shadow-sm mb-6">
-          <h2 className="text-lg font-semibold mb-4">Distribute Balance</h2>
-          <form onSubmit={handleDistributeBalance}>
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">
-                Available balance: <span className="font-medium">{balance.current} points</span>
-              </p>
-              <p className="text-sm text-gray-600 mb-4">
-                Allocate points to employees below. Total allocation cannot exceed available balance.
-              </p>
-              
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Employee
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Position
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Email
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Points to Allocate
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+        <Card className="mb-6">
+          <div className="p-6">
+            <h2 className="text-lg font-semibold mb-4">Распределить баланс</h2>
+            <form onSubmit={handleDistributeBalance}>
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  Доступный баланс: <span className="font-medium">{balanceData?.balance || 0} points</span>
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
+                  Распределите points между сотрудниками. Общая сумма не может превышать доступный баланс.
+                </p>
+                
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Сотрудник</TableHead>
+                      <TableHead>Роль</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Points для распределения</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {employees.map((employee) => (
-                      <tr key={employee.id}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{employee.name}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {employee.position}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {employee.email}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <input
+                      <TableRow key={employee.id}>
+                        <TableCell>{employee.name}</TableCell>
+                        <TableCell>{employee.company_role}</TableCell>
+                        <TableCell>{employee.email}</TableCell>
+                        <TableCell>
+                          <Input
                             type="number"
                             value={distributionData[employee.id] || '0'}
                             onChange={(e) => handleDistributionChange(employee.id, e.target.value)}
                             min="0"
-                            max={balance.current.toString()}
-                            className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
+                            max={balanceData?.balance.toString()}
+                            className="w-24"
                           />
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
-            </div>
-            
-            <div className="flex justify-between items-center">
-              <div className="text-sm font-medium">
-                Total Allocation: {Object.values(distributionData).reduce(
-                  (sum, value) => sum + parseInt(value || '0'), 0
-                )} points
+              
+              <div className="flex justify-between items-center">
+                <div className="text-sm font-medium">
+                  Всего к распределению: {Object.values(distributionData).reduce(
+                    (sum, value) => sum + parseInt(value || '0'), 0
+                  )} points
+                </div>
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  disabled={loading || Object.values(distributionData).reduce(
+                    (sum, value) => sum + parseInt(value || '0'), 0
+                  ) === 0}
+                >
+                  {loading ? 'Обработка...' : 'Распределить баланс'}
+                </Button>
               </div>
-              <button
-                type="submit"
-                disabled={loading || Object.values(distributionData).reduce(
-                  (sum, value) => sum + parseInt(value || '0'), 0
-                ) === 0}
-                className="px-4 py-2 bg-secondary text-white rounded-md hover:bg-secondary-dark disabled:opacity-50"
-              >
-                {loading ? 'Processing...' : 'Distribute Balance'}
-              </button>
-            </div>
-          </form>
-        </div>
+            </form>
+          </div>
+        </Card>
       )}
       
       {/* Transaction History */}
-      <div className="bg-white p-6 rounded-lg shadow-sm">
-        <h2 className="text-lg font-semibold mb-4">Transaction History</h2>
-        {loading ? (
-          <div className="flex justify-center items-center h-32">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
-          </div>
-        ) : (
-          <div className="text-center py-8">
-            <p className="text-gray-500">Transaction history will be displayed here.</p>
-          </div>
-        )}
-      </div>
+      <Card>
+        <div className="p-6">
+          <h2 className="text-lg font-semibold mb-4">История транзакций</h2>
+          {loading ? (
+            <div className="flex justify-center items-center h-32">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary"></div>
+            </div>
+          ) : balanceData?.transactions.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Дата</TableHead>
+                  <TableHead>Тип</TableHead>
+                  <TableHead>Сумма</TableHead>
+                  <TableHead>Описание</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {balanceData.transactions.map((transaction) => (
+                  <TableRow key={transaction.id}>
+                    <TableCell>
+                      {new Date(transaction.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>{transaction.transaction_type}</TableCell>
+                    <TableCell>{transaction.amount} points</TableCell>
+                    <TableCell>{transaction.description}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-gray-500">История транзакций пуста.</p>
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 };

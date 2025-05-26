@@ -27,7 +27,7 @@ def get_profile(current_user):
     conn = get_db_connection()
     try:
         # Get user data
-        user = conn.execute('SELECT id, email, role, phone, city, country, created_at FROM users WHERE id = ?', 
+        user = conn.execute('SELECT id, email, role, phone, city, country, created_at, balance FROM users WHERE id = ?', 
                            (current_user['id'],)).fetchone()
         
         if not user:
@@ -171,6 +171,29 @@ def get_activity(current_user):
         activity_list = [dict(activity) for activity in activities]
         
         return jsonify({'activities': activity_list}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+# Get user balance (only for executors)
+@users_bp.route('/balance', methods=['GET'])
+@token_required
+def get_balance(current_user):
+    if current_user['role'] != 'executor':
+        return jsonify({'error': 'Only executors can view balance'}), 403
+        
+    conn = get_db_connection()
+    try:
+        # Get user balance
+        user = conn.execute('SELECT balance FROM users WHERE id = ?', 
+                           (current_user['id'],)).fetchone()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        return jsonify({'balance': user['balance'] or 0}), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

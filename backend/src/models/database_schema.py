@@ -23,6 +23,7 @@ def init_db(db_path):
         phone TEXT,
         city TEXT,
         country TEXT,
+        balance INTEGER DEFAULT 0,  -- баланс пользователя
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )

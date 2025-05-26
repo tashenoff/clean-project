@@ -6,15 +6,24 @@ interface User {
   id: number;
   email: string;
   role: string;
+  balance?: number;
+  company_role?: 'owner' | 'admin' | 'manager' | 'employee';
   first_name?: string;
   last_name?: string;
   phone?: string;
   city?: string;
   country?: string;
-  created_at: string;
+  created_at?: string;
   executor_profile?: {
     points: number;
     experience_level: string;
+  };
+  company?: {
+    id: number;
+    name: string;
+    bin: string;
+    address: string;
+    status: string;
   };
   company_id?: number;
   is_company_admin?: boolean;
@@ -29,6 +38,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   registerStep1: (userData: { email: string; password: string; role: string }) => Promise<void>;
   registerStep2: (companyData: { name: string; bin: string; address: string }) => Promise<void>;
+  updateUserBalance: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -110,14 +120,36 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           ...currentUser,
           role: verifiedData.role
         };
+
+        // Если пользователь - исполнитель, загружаем его баланс
+        if (verifiedData.role === 'executor') {
+          try {
+            const balanceResponse = await userAPI.getBalance();
+            updatedUser.balance = balanceResponse.data.balance;
+          } catch (error) {
+            console.error('Failed to load balance:', error);
+          }
+        }
+
         updateAuthState(updatedUser);
       } else {
         // Если нет сохраненных данных или ID не совпадает, используем данные верификации
-        const newUser = {
+        const newUser: User = {
           id: verifiedData.user_id,
           role: verifiedData.role,
           email: verifiedData.email || '',
         };
+
+        // Если пользователь - исполнитель, загружаем его баланс
+        if (verifiedData.role === 'executor') {
+          try {
+            const balanceResponse = await userAPI.getBalance();
+            newUser.balance = balanceResponse.data.balance;
+          } catch (error) {
+            console.error('Failed to load balance:', error);
+          }
+        }
+
         updateAuthState(newUser);
       }
     } catch (error) {
@@ -155,6 +187,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setError(null);
       const response = await authAPI.login({ email, password });
       const { user: newUser, token } = response.data;
+
+      // Если пользователь - исполнитель, загружаем его баланс
+      if (newUser.role === 'executor') {
+        try {
+          const balanceResponse = await userAPI.getBalance();
+          newUser.balance = balanceResponse.data.balance;
+        } catch (error) {
+          console.error('Failed to load balance:', error);
+        }
+      }
+
       updateAuthState(newUser, token);
       return newUser;
     } catch (error) {
@@ -181,6 +224,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setError(null);
       const response = await authAPI.registerStep1(userData);
       const { user: newUser, token } = response.data;
+
+      // Если пользователь - исполнитель, загружаем его баланс
+      if (newUser.role === 'executor') {
+        try {
+          const balanceResponse = await userAPI.getBalance();
+          newUser.balance = balanceResponse.data.balance;
+        } catch (error) {
+          console.error('Failed to load balance:', error);
+        }
+      }
+
       updateAuthState(newUser, token);
     } catch (error) {
       const message = error instanceof AxiosError 
@@ -194,8 +248,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const registerStep2 = async (companyData: { name: string; bin: string; address: string }): Promise<void> => {
     try {
       setError(null);
-      const response = await authAPI.registerStep2(companyData);
+      const userId = user?.id;
+      if (!userId) {
+        throw new Error('User ID is required for company registration');
+      }
+      
+      const response = await authAPI.registerStep2({
+        user_id: userId,
+        company_name: companyData.name,
+        bin: companyData.bin,
+        address: companyData.address
+      });
       const { user: updatedUser } = response.data;
+
+      // Если пользователь - исполнитель, загружаем его баланс
+      if (updatedUser.role === 'executor') {
+        try {
+          const balanceResponse = await userAPI.getBalance();
+          updatedUser.balance = balanceResponse.data.balance;
+        } catch (error) {
+          console.error('Failed to load balance:', error);
+        }
+      }
+
       updateAuthState(updatedUser);
     } catch (error) {
       const message = error instanceof AxiosError 
@@ -203,6 +278,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         : 'An unexpected error occurred';
       setError(message);
       throw error;
+    }
+  };
+
+  const updateUserBalance = async () => {
+    if (user?.role === 'executor') {
+      try {
+        const balanceResponse = await userAPI.getBalance();
+        const updatedUser = { ...user, balance: balanceResponse.data.balance };
+        updateAuthState(updatedUser);
+      } catch (error) {
+        console.error('Failed to update balance:', error);
+      }
     }
   };
 
@@ -216,7 +303,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         login,
         logout,
         registerStep1,
-        registerStep2
+        registerStep2,
+        updateUserBalance
       }}
     >
       {children}

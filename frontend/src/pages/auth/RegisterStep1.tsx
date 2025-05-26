@@ -56,12 +56,15 @@ const RegisterStep1: React.FC = () => {
       localStorage.setItem('token', response.data.token);
       localStorage.setItem('userId', response.data.user_id);
       localStorage.setItem('userRole', response.data.role);
+      localStorage.setItem('tempPassword', formData.password);
+      localStorage.setItem('userEmail', formData.email);
       
       // Navigate to step 2 if successful
       navigate('/register/company', { 
         state: { 
           userId: response.data.user_id,
-          userRole: response.data.role
+          userRole: response.data.role,
+          email: formData.email
         } 
       });
       

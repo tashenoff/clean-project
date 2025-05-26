@@ -33,8 +33,8 @@ const ExecutorLayout: React.FC = () => {
                 <span className="px-3 py-1 bg-secondary rounded-full text-white text-xs font-medium">
                   {user.executor_profile.experience_level}
                 </span>
-                <span className="px-3 py-1 bg-primary rounded-full text-white text-xs font-medium">
-                  {user.executor_profile.points} points
+                <span className="px-3 py-1 bg-green-500 rounded-full text-white text-xs font-medium">
+                  {user.balance || 0} credits
                 </span>
               </div>
             )}
@@ -77,12 +77,19 @@ const ExecutorLayout: React.FC = () => {
             >
               Profile
             </Link>
-            {user?.company && (
+            {user?.company ? (
               <Link
                 to={`/company/${user.company.id}/dashboard`}
                 className="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
               >
                 Company
+              </Link>
+            ) : (
+              <Link
+                to="/register/company"
+                className="inline-flex items-center px-3 py-1 bg-primary text-white rounded-md text-sm font-medium hover:bg-primary-dark"
+              >
+                Create Company
               </Link>
             )}
           </div>

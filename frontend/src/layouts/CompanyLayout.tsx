@@ -14,10 +14,8 @@ const CompanyLayout: React.FC = () => {
 
   // Determine return path based on user role
   const getReturnPath = () => {
-    if (user?.role === 'customer') {
-      return '/customer/dashboard';
-    } else if (user?.role === 'executor') {
-      return '/executor/dashboard';
+    if (user?.role === 'customer' || user?.role === 'executor') {
+      return `/${user.role}/dashboard`;
     } else if (user?.role === 'admin') {
       return '/admin/dashboard';
     }

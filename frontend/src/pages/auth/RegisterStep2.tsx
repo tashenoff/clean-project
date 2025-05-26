@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { authAPI } from '../../api/api';
+import { authAPI, userAPI } from '../../api/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface LocationState {
   userId: number;
   userRole: string;
+  email?: string;
 }
 
 const RegisterStep2: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as LocationState;
+  const { user, login } = useAuth();
   
   const [formData, setFormData] = useState({
     user_id: 0,
@@ -53,15 +56,35 @@ const RegisterStep2: React.FC = () => {
       setLoading(true);
       
       // Submit registration step 2
-      const response = await authAPI.registerStep2({
+      await authAPI.registerStep2({
         user_id: formData.user_id,
         company_name: formData.company_name,
         bin: formData.bin,
         address: formData.address
       });
+
+      // Получаем временный пароль из localStorage
+      const tempPassword = localStorage.getItem('tempPassword');
+      if (!tempPassword) {
+        throw new Error('Missing temporary password');
+      }
+
+      // Получаем email из state или localStorage
+      const userEmail = state?.email || localStorage.getItem('userEmail');
+      if (!userEmail) {
+        throw new Error('Missing email');
+      }
+
+      // Переавторизуемся для обновления данных в контексте
+      await login(userEmail, tempPassword);
       
       // Determine where to redirect based on user role
       const userRole = state?.userRole || localStorage.getItem('userRole');
+      
+      // Очищаем временные данные
+      localStorage.removeItem('userId');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('tempPassword');
       
       if (userRole === 'customer') {
         navigate('/customer/dashboard');

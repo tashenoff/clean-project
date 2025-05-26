@@ -181,6 +181,9 @@ export const authAPI = {
     email: string;
     password: string;
     role: string;
+    phone?: string;
+    city?: string;
+    country?: string;
   }) => {
     try {
       const response = await apiClient.post('/auth/register/step1', userData);
@@ -192,7 +195,8 @@ export const authAPI = {
   },
   
   registerStep2: async (companyData: {
-    name: string;
+    user_id: number;
+    company_name: string;
     bin: string;
     address: string;
   }) => {
@@ -210,6 +214,10 @@ export const authAPI = {
 export const userAPI = {
   getProfile: () => {
     return apiClient.get('/users/profile');
+  },
+  
+  getBalance: () => {
+    return apiClient.get('/users/balance');
   },
   
   updateProfile: (profileData: any) => {
@@ -505,16 +513,38 @@ export const companyAPI = {
     return apiClient.put('/companies/profile', profileData);
   },
   
-  getEmployees: () => {
-    return apiClient.get('/companies/employees');
+  getEmployees: (companyId: number) => {
+    return apiClient.get(`/companies/${companyId}`);
   },
   
   addEmployee: (employeeData: any) => {
-    return apiClient.post('/companies/employees', employeeData);
+    return apiClient.post(`/companies/${employeeData.company_id}/employees`, employeeData);
   },
   
   removeEmployee: (employeeId: number) => {
     return apiClient.delete(`/companies/employees/${employeeId}`);
+  },
+
+  getBalance: (companyId: number) => {
+    return apiClient.get(`/companies/${companyId}/balance`);
+  },
+
+  addBalance: (companyId: number, data: { amount: number }) => {
+    return apiClient.post(`/companies/${companyId}/balance`, data);
+  },
+
+  addEmployeeBalance: async (companyId: number, userId: number, data: { amount: number, description?: string }) => {
+    try {
+      // Добавляем баланс сотруднику
+      await apiClient.post(`/companies/${companyId}/employees/${userId}/balance`, data);
+      
+      // Получаем обновленный баланс пользователя
+      const balanceResponse = await userAPI.getBalance();
+      return balanceResponse;
+    } catch (error) {
+      console.error('Error adding employee balance:', error);
+      throw error;
+    }
   }
 };
 
