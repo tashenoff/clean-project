@@ -36,15 +36,25 @@ def get_listings(current_user):
     conn = get_db_connection()
     try:
         # Build query based on filters
-        query = 'SELECT * FROM listings WHERE status = ?'
-        params = [status]
+        query = '''
+            SELECT 
+                l.*,
+                CASE 
+                    WHEN r.id IS NOT NULL THEN 1 
+                    ELSE 0 
+                END as has_responded
+            FROM listings l
+            LEFT JOIN responses r ON l.id = r.listing_id AND r.user_id = ?
+            WHERE l.status = ?
+        '''
+        params = [current_user['id'], status]
         
         if category:
-            query += ' AND category = ?'
+            query += ' AND l.category = ?'
             params.append(category)
         
         # Add pagination
-        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+        query += ' ORDER BY l.created_at DESC LIMIT ? OFFSET ?'
         params.extend([per_page, offset])
         
         # Execute query
@@ -82,8 +92,18 @@ def get_listings(current_user):
 def get_listing(current_user, listing_id):
     conn = get_db_connection()
     try:
-        # Get listing
-        listing = conn.execute('SELECT * FROM listings WHERE id = ?', (listing_id,)).fetchone()
+        # Get listing with has_responded flag
+        listing = conn.execute('''
+            SELECT 
+                l.*,
+                CASE 
+                    WHEN r.id IS NOT NULL THEN 1 
+                    ELSE 0 
+                END as has_responded
+            FROM listings l
+            LEFT JOIN responses r ON l.id = r.listing_id AND r.user_id = ?
+            WHERE l.id = ?
+        ''', (current_user['id'], listing_id)).fetchone()
         
         if not listing:
             return jsonify({'error': 'Listing not found'}), 404

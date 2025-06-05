@@ -1,15 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { listingsAPI, responsesAPI } from '../../api/api';
+import { listingsAPI, responsesAPI, userAPI } from '../../api/api';
+import { useToast } from "../../hooks/use-toast";
+import { useAuth } from "../../contexts/AuthContext";
+
+interface Listing {
+  id: number;
+  title: string;
+  category: string;
+  status: string;
+  created_at: string;
+  company_id: number;
+  description: string;
+  budget?: number;
+  location?: string;
+  deadline?: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  purchase_method?: string;
+  payment_terms?: string;
+  listing_type?: string;
+  delivery_date?: string;
+  publication_period?: string;
+  has_responded: boolean;
+  owner?: any;
+  responses?: any[];
+}
 
 const ExecutorListingDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const [listing, setListing] = useState<any>(null);
-  const [response, setResponse] = useState<any>(null);
+  const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
   const [responseLoading, setResponseLoading] = useState(false);
   const [error, setError] = useState('');
   const [responseMessage, setResponseMessage] = useState('');
+  const { toast } = useToast();
+  const { updateUserBalance } = useAuth();
 
   useEffect(() => {
     const fetchListingData = async () => {
@@ -75,28 +102,40 @@ const ExecutorListingDetail: React.FC = () => {
   }, [id]);
 
   const handleCreateResponse = async () => {
-    if (!id) return;
+    if (!id || !listing) return;
     
     try {
       setResponseLoading(true);
-      const response = await responsesAPI.createResponse(Number(id), {
+      await responsesAPI.createResponse(Number(id), {
         message: responseMessage || "I'm interested in this listing and would like to offer my services."
       });
       
-      // Update local state
-      setResponse({
-        id: response.data.response_id,
-        status: 'pending',
-        message: responseMessage || "I'm interested in this listing and would like to offer my services.",
-        created_at: new Date().toISOString()
-      });
-      
+      // Обновляем данные объявления после успешного создания отклика
+      const updatedListing = await listingsAPI.getListing(Number(id));
+      setListing(updatedListing.data.listing);
       setResponseMessage('');
-    } catch (error: any) {
-      console.error('Error creating response:', error);
-      setError(error.response?.data?.error || 'Failed to submit response. Please try again.');
+      
+      // Обновляем баланс пользователя через AuthContext
+      await updateUserBalance();
+      
+      toast({
+        title: "Успешно!",
+        description: "Отклик создан! Баланс обновлен.",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Недостаточно баллов!",
+        description: "Для создания отклика требуется 1 балл. Пожалуйста, пополните баланс.",
+      });
     } finally {
       setResponseLoading(false);
+    }
+  };
+
+  const handleResponseClick = () => {
+    if (window.confirm('Вы действительно хотите откликнуться на это объявление? С вашего баланса будет списан 1 балл.')) {
+      handleCreateResponse();
     }
   };
 
@@ -170,7 +209,7 @@ const ExecutorListingDetail: React.FC = () => {
       </div>
 
       {/* Details Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         {/* Left Column - Details */}
         <div>
           <h3 className="text-lg font-semibold mb-4">Детали</h3>
@@ -197,20 +236,12 @@ const ExecutorListingDetail: React.FC = () => {
             </div>
             <div className="flex">
               <span className="font-medium w-32">Срок поставки:</span>
-              <span className="text-gray-700">
-                {listing.delivery_date 
-                  ? new Date(listing.delivery_date).toLocaleDateString() 
-                  : 'Not specified'}
-              </span>
-            </div>
-            <div className="flex">
-              <span className="font-medium w-32">Период публикации:</span>
-              <span className="text-gray-700">{listing.publication_period} дней</span>
+              <span className="text-gray-700">{listing.deadline}</span>
             </div>
           </div>
         </div>
 
-        {/* Right Column - Contact Information */}
+        {/* Right Column - Contact Info */}
         <div>
           <h3 className="text-lg font-semibold mb-4">Контактная информация</h3>
           <div className="space-y-3">
@@ -231,34 +262,43 @@ const ExecutorListingDetail: React.FC = () => {
       </div>
 
       {/* Response Form */}
-      <div className="mt-8">
-        <h3 className="text-lg font-semibold mb-4">Откликнуться на заявку</h3>
-        <form onSubmit={handleCreateResponse} className="space-y-4">
-          <div>
-            <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-1">
-              Сообщение (необязательно)
-            </label>
-            <textarea
-              id="message"
-              name="message"
-              rows={4}
-              value={responseMessage}
-              onChange={(e) => setResponseMessage(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
-              placeholder="Введите ваше сообщение..."
-            />
-          </div>
-          <div className="flex justify-end">
+      {listing.status === 'published' && !listing.has_responded && (
+        <div className="mt-8 border-t pt-6">
+          <h3 className="text-lg font-semibold mb-4">Откликнуться на заявку</h3>
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-2">
+                Сообщение (необязательно)
+              </label>
+              <textarea
+                id="message"
+                rows={4}
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary"
+                value={responseMessage}
+                onChange={(e) => setResponseMessage(e.target.value)}
+                placeholder="Введите ваше сообщение..."
+              />
+            </div>
             <button
-              type="submit"
+              onClick={handleResponseClick}
               disabled={responseLoading}
-              className="bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md disabled:opacity-50"
+              className="bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {responseLoading ? 'Отправка...' : 'Откликнуться'}
+              {responseLoading ? 'Отправка...' : 'Откликнуться (1 балл)'}
             </button>
           </div>
-        </form>
-      </div>
+        </div>
+      )}
+
+      {listing.has_responded && (
+        <div className="mt-8 border-t pt-6">
+          <div className="bg-green-50 border border-green-200 rounded-md p-4">
+            <p className="text-green-700">
+              Вы уже откликнулись на это объявление. Ожидайте ответа от заказчика.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

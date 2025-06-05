@@ -20,19 +20,23 @@ def get_db_connection():
     return conn
 
 # Get responses for a listing
-@responses_bp.route('/listing/<int:listing_id>', methods=['GET'])
+@responses_bp.route('/listings/<int:listing_id>/responses', methods=['GET'])
 @token_required
 def get_listing_responses(current_user, listing_id):
     conn = get_db_connection()
     try:
-        # Check if user owns the listing
+        # Check if user has access to the listing (same company)
         listing = conn.execute('''
-            SELECT * FROM listings 
-            WHERE id = ? AND user_id = ?
+            SELECT l.* FROM listings l
+            JOIN company_users cu ON l.company_id = cu.company_id
+            WHERE l.id = ? AND cu.user_id = ?
         ''', (listing_id, current_user['id'])).fetchone()
         
         if not listing:
+            print(f"User {current_user['id']} does not have access to listing {listing_id}")
             return jsonify({'error': 'Listing not found or unauthorized'}), 404
+        
+        print(f"Found listing {listing_id} for user {current_user['id']}")
         
         # Get responses
         responses = conn.execute('''
@@ -45,6 +49,8 @@ def get_listing_responses(current_user, listing_id):
             ORDER BY r.created_at DESC
         ''', (listing_id,)).fetchall()
         
+        print(f"Found {len(responses)} responses for listing {listing_id}")
+        
         # Convert to list of dicts for JSON serialization
         responses_list = [dict(response) for response in responses]
         
@@ -54,12 +60,13 @@ def get_listing_responses(current_user, listing_id):
         }), 200
         
     except Exception as e:
+        print(f"Error getting responses for listing {listing_id}:", str(e))
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
 
 # Get user's responses
-@responses_bp.route('/my-responses', methods=['GET'])
+@responses_bp.route('/responses/my-responses', methods=['GET'])
 @token_required
 def get_my_responses(current_user):
     # Parse query parameters
@@ -119,11 +126,14 @@ def get_my_responses(current_user):
         conn.close()
 
 # Create response to listing
-@responses_bp.route('/listing/<int:listing_id>', methods=['POST'])
+@responses_bp.route('/listings/<int:listing_id>/responses', methods=['POST'])
 @token_required
 def create_response(current_user, listing_id):
+    print(f"Creating response for listing {listing_id} by user {current_user['id']}")
+    
     # Check if user is executor
     if current_user['role'] != 'executor':
+        print(f"User {current_user['id']} is not an executor")
         return jsonify({'error': 'Only executors can respond to listings'}), 403
     
     conn = get_db_connection()
@@ -135,6 +145,7 @@ def create_response(current_user, listing_id):
         ''', (listing_id,)).fetchone()
         
         if not listing:
+            print(f"Listing {listing_id} not found or not published")
             return jsonify({'error': 'Listing not found or not available'}), 404
         
         # Check if user already responded to this listing
@@ -144,6 +155,7 @@ def create_response(current_user, listing_id):
         ''', (listing_id, current_user['id'])).fetchone()
         
         if existing_response:
+            print(f"User {current_user['id']} already responded to listing {listing_id}")
             return jsonify({'error': 'You have already responded to this listing'}), 409
         
         # Get user's company if exists
@@ -154,22 +166,32 @@ def create_response(current_user, listing_id):
         ''', (current_user['id'],)).fetchone()
         
         company_id = company['id'] if company else None
+        print(f"Company ID for user {current_user['id']}: {company_id}")
         
-        # Get executor profile
-        executor = conn.execute('''
-            SELECT * FROM executor_profiles 
-            WHERE user_id = ?
+        # Get user balance
+        user = conn.execute('''
+            SELECT balance FROM users 
+            WHERE id = ?
         ''', (current_user['id'],)).fetchone()
         
-        if not executor:
-            return jsonify({'error': 'Executor profile not found'}), 404
+        if not user:
+            print(f"User {current_user['id']} not found")
+            return jsonify({'error': 'User not found'}), 404
         
-        # Check if executor has enough points
-        required_points = 1  # Default cost for response
-        if executor['points'] < required_points:
-            return jsonify({'error': 'Insufficient points to respond'}), 400
+        print(f"Current user balance: {user['balance']}")
+        
+        # Check if user has enough balance
+        required_balance = 1  # Default cost for response
+        if user['balance'] < required_balance:
+            print(f"Insufficient balance: required {required_balance}, current {user['balance']}")
+            return jsonify({
+                'error': 'Insufficient balance to respond',
+                'required': required_balance,
+                'current': user['balance']
+            }), 400
         
         data = request.get_json() or {}
+        print(f"Request data: {data}")
         
         # Insert response
         cursor = conn.execute('''
@@ -183,15 +205,17 @@ def create_response(current_user, listing_id):
         ))
         
         response_id = cursor.lastrowid
+        print(f"Created response with ID: {response_id}")
         
-        # Update executor points
-        new_points = executor['points'] - required_points
-        new_spent_points = executor['spent_points'] + required_points
+        # Update user balance
+        new_balance = user['balance'] - required_balance
         conn.execute('''
-            UPDATE executor_profiles 
-            SET points = ?, spent_points = ? 
-            WHERE user_id = ?
-        ''', (new_points, new_spent_points, current_user['id']))
+            UPDATE users 
+            SET balance = ?
+            WHERE id = ?
+        ''', (new_balance, current_user['id']))
+        
+        print(f"Updated user balance to: {new_balance}")
         
         # Log activity
         conn.execute('''
@@ -205,21 +229,23 @@ def create_response(current_user, listing_id):
         ))
         
         conn.commit()
+        print("Transaction committed successfully")
         
         return jsonify({
             'message': 'Response created successfully',
             'response_id': response_id,
-            'remaining_points': new_points
+            'remaining_balance': new_balance
         }), 201
         
     except Exception as e:
+        print(f"Error creating response: {str(e)}")
         conn.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
 
 # Update response status (accept/reject)
-@responses_bp.route('/<int:response_id>/status', methods=['PUT'])
+@responses_bp.route('/responses/<int:response_id>/status', methods=['PUT'])
 @token_required
 def update_response_status(current_user, response_id):
     data = request.get_json()
@@ -275,7 +301,7 @@ def update_response_status(current_user, response_id):
         conn.close()
 
 # Delete response
-@responses_bp.route('/<int:response_id>', methods=['DELETE'])
+@responses_bp.route('/responses/<int:response_id>', methods=['DELETE'])
 @token_required
 def delete_response(current_user, response_id):
     conn = get_db_connection()

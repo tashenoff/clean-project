@@ -473,8 +473,61 @@ export const listingsAPI = {
 
 // Responses API
 export const responsesAPI = {
-  getListingResponses: (listingId: number) => {
-    return apiClient.get(`/listings/${listingId}/responses`);
+  // Получить все отклики для объявления
+  getListingResponses: async (listingId: number) => {
+    try {
+      console.log('Fetching responses for listing:', listingId);
+      const response = await apiClient.get(`/listings/${listingId}/responses`);
+      console.log('Responses received:', response.data);
+      return response;
+    } catch (error) {
+      console.error('Error fetching listing responses:', error);
+      throw error;
+    }
+  },
+
+  // Обновить статус отклика
+  updateResponseStatus: async (responseId: number, data: { status: string }) => {
+    try {
+      console.log('Updating response status:', { responseId, data });
+      const response = await apiClient.put(`/responses/${responseId}/status`, data);
+      console.log('Response status updated:', response.data);
+      return response;
+    } catch (error) {
+      console.error('Error updating response status:', error);
+      throw error;
+    }
+  },
+
+  // Создать новый отклик
+  createResponse: async (listingId: number, data: { message: string }) => {
+    try {
+      console.log('Creating response:', { listingId, data });
+      const response = await apiClient.post(`/listings/${listingId}/responses`, data);
+      console.log('Response created:', response.data);
+      return response;
+    } catch (error: any) {
+      // Подробное логирование ошибки
+      console.error('Response creation error details:', {
+        name: error.name,
+        message: error.message,
+        response: {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          headers: error.response?.headers
+        },
+        request: {
+          method: error.config?.method,
+          url: error.config?.url,
+          data: error.config?.data,
+          headers: error.config?.headers
+        }
+      });
+
+      // Пробрасываем ошибку дальше с дополнительной информацией
+      throw error;
+    }
   },
   
   getMyResponses: (params?: {
@@ -484,14 +537,6 @@ export const responsesAPI = {
     per_page?: number;
   }) => {
     return apiClient.get('/responses/my-responses', { params });
-  },
-  
-  createResponse: (listingId: number, responseData: { message?: string }) => {
-    return apiClient.post(`/listings/${listingId}/responses`, responseData);
-  },
-  
-  updateResponseStatus: (responseId: number, statusData: { status: 'accepted' | 'rejected' }) => {
-    return apiClient.put(`/responses/${responseId}/status`, statusData);
   },
   
   deleteResponse: (responseId: number) => {

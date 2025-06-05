@@ -1,24 +1,61 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listingsAPI, responsesAPI } from '../../api/api';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../components/ui/alert-dialog';
+import { toast } from 'sonner';
+
+interface Listing {
+  id: number;
+  title: string;
+  category: string;
+  status: string;
+  created_at: string;
+  company_id: number;
+  description: string;
+  budget?: number;
+  location?: string;
+  deadline?: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  has_responded: boolean;
+}
 
 const ExecutorListings: React.FC = () => {
-  const [listings, setListings] = useState<any[]>([]);
+  const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('published');
   const [category, setCategory] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [selectedListingId, setSelectedListingId] = useState<number | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   useEffect(() => {
     const fetchListings = async () => {
       try {
         setLoading(true);
+        console.log('Fetching listings with params:', {
+          status: filter,
+          category: category || undefined,
+          page,
+          per_page: 10
+        });
+        
         const response = await listingsAPI.getListings({
           status: filter,
           category: category || undefined,
           page,
           per_page: 10
+        });
+        
+        console.log('Listings response:', {
+          total: response.data.listings.length,
+          listings: response.data.listings.map(l => ({
+            id: l.id,
+            title: l.title,
+            has_responded: l.has_responded
+          }))
         });
         
         setListings(response.data.listings);
@@ -43,30 +80,66 @@ const ExecutorListings: React.FC = () => {
     setPage(1); // Reset to first page when category changes
   };
 
-  const handleCreateResponse = async (listingId: number) => {
+  const handleResponseClick = (listingId: number) => {
+    console.log('Opening confirmation dialog for listing:', listingId);
+    setSelectedListingId(listingId);
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmResponse = async () => {
+    if (!selectedListingId) return;
+
     try {
-      await responsesAPI.createResponse(listingId, {
+      console.log('Creating response for listing:', selectedListingId);
+      
+      const response = await responsesAPI.createResponse(selectedListingId, {
         message: "I'm interested in this listing and would like to offer my services."
       });
       
-      // Refresh listings to update response status
-      const response = await listingsAPI.getListings({
+      console.log('Response created successfully:', response.data);
+      
+      // Обновляем список объявлений
+      const listingsResponse = await listingsAPI.getListings({
         status: filter,
         category: category || undefined,
         page,
         per_page: 10
       });
       
-      setListings(response.data.listings);
-    } catch (error) {
+      console.log('Listings refreshed:', {
+        total: listingsResponse.data.listings.length,
+        listings: listingsResponse.data.listings.map(l => ({
+          id: l.id,
+          title: l.title,
+          has_responded: l.has_responded
+        }))
+      });
+      
+      setListings(listingsResponse.data.listings);
+      toast.success('Отклик успешно создан');
+    } catch (error: any) {
       console.error('Error creating response:', error);
+      console.error('Error details:', {
+        response: error.response,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      
+      if (error.response?.data?.error === 'Insufficient balance to respond') {
+        toast.error('Недостаточно баланса для создания отклика');
+      } else {
+        toast.error('Ошибка при создании отклика: ' + (error.response?.data?.error || error.message));
+      }
+    } finally {
+      setShowConfirmDialog(false);
+      setSelectedListingId(null);
     }
   };
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Available Listings</h1>
+        <h1 className="text-2xl font-bold">Доступные объявления</h1>
       </div>
 
       {/* Filters */}
@@ -161,19 +234,19 @@ const ExecutorListings: React.FC = () => {
                   to={`/executor/listings/${listing.id}`}
                   className="text-primary hover:text-primary-dark text-sm font-medium"
                 >
-                  View Details
+                  Подробнее
                 </Link>
                 
                 {listing.has_responded ? (
                   <span className="text-sm text-gray-500 italic">
-                    You have already responded to this listing
+                    Вы уже откликнулись на это объявление
                   </span>
                 ) : (
                   <button
-                    onClick={() => handleCreateResponse(listing.id)}
+                    onClick={() => handleResponseClick(listing.id)}
                     className="bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md text-sm"
                   >
-                    Respond (1 point)
+                    Откликнуться (1 баланс)
                   </button>
                 )}
               </div>
@@ -251,20 +324,25 @@ const ExecutorListings: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="bg-white p-6 rounded-lg shadow-sm text-center">
-          <p className="text-gray-500 mb-4">No listings found matching your criteria.</p>
-          <button
-            onClick={() => {
-              setFilter('published');
-              setCategory('');
-              setPage(1);
-            }}
-            className="inline-block bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md"
-          >
-            Reset Filters
-          </button>
+        <div className="text-center py-12">
+          <p className="text-gray-500">Нет доступных объявлений</p>
         </div>
       )}
+
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Подтверждение отклика</AlertDialogTitle>
+            <AlertDialogDescription>
+              С вашего баланса будет списан 1 балл. Продолжить?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowConfirmDialog(false)}>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmResponse}>Подтвердить</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

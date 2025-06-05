@@ -32,7 +32,7 @@ app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(users_bp, url_prefix='/api/users')
 app.register_blueprint(companies_bp, url_prefix='/api/companies')
 app.register_blueprint(listings_bp, url_prefix='/api/listings')
-app.register_blueprint(responses_bp, url_prefix='/api/responses')
+app.register_blueprint(responses_bp, url_prefix='/api')  # Changed to /api to support both /api/listings/<id>/responses and /api/responses/...
 app.register_blueprint(admin_bp, url_prefix='/api/admin')
 
 # Error handlers
