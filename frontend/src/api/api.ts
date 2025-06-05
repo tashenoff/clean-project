@@ -590,6 +590,10 @@ export const companyAPI = {
       console.error('Error adding employee balance:', error);
       throw error;
     }
+  },
+
+  resetEmployeePassword: (companyId: number, userId: number) => {
+    return apiClient.post(`/companies/${companyId}/employees/${userId}/reset-password`);
   }
 };
 

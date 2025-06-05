@@ -122,7 +122,7 @@ def change_password(current_user):
             return jsonify({'error': 'Current password is incorrect'}), 401
         
         # Update password
-        hashed_password = generate_password_hash(data['new_password'])
+        hashed_password = generate_password_hash(data['new_password'], method='pbkdf2:sha256')
         conn.execute('UPDATE users SET password = ? WHERE id = ?', 
                     (hashed_password, current_user['id']))
         conn.commit()

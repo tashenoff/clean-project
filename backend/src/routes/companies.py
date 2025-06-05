@@ -5,6 +5,7 @@ Handles company operations, employee management, and balance operations.
 
 import sqlite3
 import os
+import random
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash
 from src.utils.auth_middleware import token_required
@@ -161,7 +162,7 @@ def add_employee(current_user, company_id):
             user_id = existing_user['id']
         else:
             # Create new user
-            hashed_password = generate_password_hash(data['password'])
+            hashed_password = generate_password_hash(data['password'], method='pbkdf2:sha256')
             
             cursor = conn.execute('''
                 INSERT INTO users (email, password, role, phone, city, country) 
@@ -436,6 +437,56 @@ def add_employee_balance(current_user, company_id, user_id):
             raise e
         
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+# Reset employee password
+@companies_bp.route('/<int:company_id>/employees/<int:user_id>/reset-password', methods=['POST'])
+@token_required
+def reset_employee_password(current_user, company_id, user_id):
+    conn = get_db_connection()
+    try:
+        # Check if user is company owner or admin
+        company_user = conn.execute('''
+            SELECT cu.*, u.role as user_role 
+            FROM company_users cu
+            JOIN users u ON u.id = cu.user_id
+            WHERE cu.company_id = ? AND cu.user_id = ? 
+            AND (cu.role IN ('owner', 'admin') OR u.role = 'executor')
+        ''', (company_id, current_user['id'])).fetchone()
+        
+        if not company_user:
+            return jsonify({'error': 'Unauthorized to reset employee password'}), 403
+        
+        # Check if target user belongs to company
+        target_user = conn.execute('''
+            SELECT u.*, cu.role as company_role
+            FROM users u
+            JOIN company_users cu ON u.id = cu.user_id
+            WHERE cu.company_id = ? AND u.id = ?
+        ''', (company_id, user_id)).fetchone()
+        
+        if not target_user:
+            return jsonify({'error': 'User is not a member of this company'}), 404
+            
+        # Generate new password
+        new_password = ''.join([chr(random.randint(33, 126)) for _ in range(12)])
+        
+        # Hash and update password
+        hashed_password = generate_password_hash(new_password, method='pbkdf2:sha256')
+        conn.execute('UPDATE users SET password = ? WHERE id = ?', 
+                    (hashed_password, user_id))
+        
+        conn.commit()
+        
+        return jsonify({
+            'message': 'Password reset successfully',
+            'new_password': new_password
+        }), 200
+        
+    except Exception as e:
+        conn.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()

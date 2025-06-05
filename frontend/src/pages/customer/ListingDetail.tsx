@@ -4,6 +4,7 @@ import { listingsAPI, responsesAPI } from '../../api/api';
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '../../components/ui/table';
+import { useAuth } from "../../contexts/AuthContext";
 
 const CustomerListingDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -14,6 +15,7 @@ const CustomerListingDetail: React.FC = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('details');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchListingData = async () => {
@@ -82,6 +84,9 @@ const CustomerListingDetail: React.FC = () => {
 
     fetchListingData();
   }, [id]);
+
+  // Проверка прав доступа
+  const hasAccess = user && listing?.owner && user.id === listing.owner.id;
 
   const handleStatusChange = async (newStatus: 'published' | 'unpublished' | 'closed' | 'cancelled') => {
     if (!id || !listing) return;
@@ -187,41 +192,43 @@ const CustomerListingDetail: React.FC = () => {
                 <span>Категория: {listing.category}</span>
               </CardDescription>
             </div>
-            <div className="flex space-x-2">
-              <Link 
-                to={`/customer/listings/${id}/edit`}
-                className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-md text-sm font-medium"
-              >
-                Редактировать
-              </Link>
-              {listing.status === 'unpublished' && (
-                <button
-                  onClick={() => handleStatusChange('published')}
-                  disabled={responseLoading}
-                  className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
+            {hasAccess && (
+              <div className="flex space-x-2">
+                <Link 
+                  to={`/customer/listings/${id}/edit`}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-md text-sm font-medium"
                 >
-                  Опубликовать
-                </button>
-              )}
-              {listing.status === 'published' && (
-                <button
-                  onClick={() => handleStatusChange('unpublished')}
-                  disabled={responseLoading}
-                  className="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
-                >
-                  Снять с публикации
-                </button>
-              )}
-              {(listing.status === 'published' || listing.status === 'unpublished') && (
-                <button
-                  onClick={() => handleStatusChange('closed')}
-                  disabled={responseLoading}
-                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
-                >
-                  Завершить
-                </button>
-              )}
-            </div>
+                  Редактировать
+                </Link>
+                {listing.status === 'unpublished' && (
+                  <button
+                    onClick={() => handleStatusChange('published')}
+                    disabled={responseLoading}
+                    className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
+                  >
+                    Опубликовать
+                  </button>
+                )}
+                {listing.status === 'published' && (
+                  <button
+                    onClick={() => handleStatusChange('unpublished')}
+                    disabled={responseLoading}
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
+                  >
+                    Снять с публикации
+                  </button>
+                )}
+                {(listing.status === 'published' || listing.status === 'unpublished') && (
+                  <button
+                    onClick={() => handleStatusChange('closed')}
+                    disabled={responseLoading}
+                    className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
+                  >
+                    Завершить
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { listingsAPI, responsesAPI, userAPI } from '../../api/api';
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
@@ -12,7 +12,7 @@ interface Listing {
   created_at: string;
   company_id: number;
   description: string;
-  budget?: number;
+  budget: number | null;
   location?: string;
   deadline?: string;
   contact_name?: string;
@@ -35,8 +35,30 @@ const ExecutorListingDetail: React.FC = () => {
   const [responseLoading, setResponseLoading] = useState(false);
   const [error, setError] = useState('');
   const [responseMessage, setResponseMessage] = useState('');
+  const [showBalanceError, setShowBalanceError] = useState(false);
   const { toast } = useToast();
-  const { updateUserBalance } = useAuth();
+  const { updateUserBalance, user } = useAuth();
+  const navigate = useNavigate();
+
+  const normalizeListingData = (listingData: any, owner: any, responses: any[]): Listing => {
+    return {
+      ...listingData,
+      contact_name: owner?.first_name && owner?.last_name 
+        ? `${owner.first_name} ${owner.last_name}` 
+        : owner?.company_name || 'Not specified',
+      contact_email: owner?.email || 'Not specified',
+      contact_phone: owner?.phone || 'Not specified',
+      location: owner?.city && owner?.country ? `${owner.city}, ${owner.country}` : 'Not specified',
+      budget: listingData.budget === 0 ? null : (listingData.budget || null),
+      deadline: listingData.delivery_date || 'Not specified',
+      purchase_method: listingData.purchase_method || 'Not specified',
+      payment_terms: listingData.payment_terms || 'Not specified',
+      listing_type: listingData.listing_type || 'Not specified',
+      publication_period: listingData.publication_period || 'Not specified',
+      owner,
+      responses
+    };
+  };
 
   useEffect(() => {
     const fetchListingData = async () => {
@@ -68,24 +90,8 @@ const ExecutorListingDetail: React.FC = () => {
           return;
         }
 
-        // Объединяем данные объявления с данными владельца
-        const combinedData = {
-          ...listingData,
-          contact_name: owner?.first_name && owner?.last_name 
-            ? `${owner.first_name} ${owner.last_name}` 
-            : owner?.company_name || 'Not specified',
-          contact_email: owner?.email || 'Not specified',
-          contact_phone: owner?.phone || 'Not specified',
-          location: owner?.city && owner?.country ? `${owner.city}, ${owner.country}` : 'Not specified',
-          budget: listingData.budget || 'Not specified',
-          deadline: listingData.delivery_date || 'Not specified',
-          purchase_method: listingData.purchase_method || 'Not specified',
-          payment_terms: listingData.payment_terms || 'Not specified',
-          listing_type: listingData.listing_type || 'Not specified',
-          publication_period: listingData.publication_period || 'Not specified',
-          owner,
-          responses: responsesData
-        };
+        // Используем функцию нормализации
+        const combinedData = normalizeListingData(listingData, owner, responsesData);
         
         console.log('Combined listing data:', combinedData);
         setListing(combinedData);
@@ -106,13 +112,18 @@ const ExecutorListingDetail: React.FC = () => {
     
     try {
       setResponseLoading(true);
+      setShowBalanceError(false);
       await responsesAPI.createResponse(Number(id), {
         message: responseMessage || "I'm interested in this listing and would like to offer my services."
       });
       
       // Обновляем данные объявления после успешного создания отклика
-      const updatedListing = await listingsAPI.getListing(Number(id));
-      setListing(updatedListing.data.listing);
+      const updatedListingResponse = await listingsAPI.getListing(Number(id));
+      const { listing: listingData, owner, responses: responsesData } = updatedListingResponse.data;
+      
+      // Используем ту же функцию нормализации при обновлении
+      const normalizedData = normalizeListingData(listingData, owner, responsesData);
+      setListing(normalizedData);
       setResponseMessage('');
       
       // Обновляем баланс пользователя через AuthContext
@@ -123,11 +134,7 @@ const ExecutorListingDetail: React.FC = () => {
         description: "Отклик создан! Баланс обновлен.",
       });
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Недостаточно баллов!",
-        description: "Для создания отклика требуется 1 балл. Пожалуйста, пополните баланс.",
-      });
+      setShowBalanceError(true);
     } finally {
       setResponseLoading(false);
     }
@@ -194,11 +201,32 @@ const ExecutorListingDetail: React.FC = () => {
     <div className="bg-white p-6 rounded-lg shadow-sm">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-2">{listing.title}</h1>
-        <div className="flex items-center space-x-4 text-sm text-gray-500">
-          <span>Категория: {listing.category}</span>
-          <span>•</span>
-          <span>Создано: {new Date(listing.created_at).toLocaleDateString()}</span>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-2xl font-bold mb-2">{listing.title}</h1>
+            <div className="flex items-center space-x-4 text-sm text-gray-500">
+              <span>Категория: {listing.category}</span>
+              <span>•</span>
+              <span>Создано: {new Date(listing.created_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+          {/* Кнопки управления только для владельца объявления */}
+          {user && listing.owner && user.id === listing.owner.id && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => navigate(`/customer/listings/${id}/edit`)}
+                className="bg-primary hover:bg-primary-dark text-white py-2 px-4 rounded-md text-sm"
+              >
+                Редактировать
+              </button>
+              <button
+                onClick={() => {/* логика снятия с публикации */}}
+                className="bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-md text-sm"
+              >
+                Снять с публикации
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -228,7 +256,9 @@ const ExecutorListingDetail: React.FC = () => {
             </div>
             <div className="flex">
               <span className="font-medium w-32">Бюджет:</span>
-              <span className="text-gray-700">{listing.budget}</span>
+              <span className="text-gray-700">
+                {listing.budget === null ? 'Не указан' : listing.budget}
+              </span>
             </div>
             <div className="flex">
               <span className="font-medium w-32">Местоположение:</span>
@@ -265,6 +295,13 @@ const ExecutorListingDetail: React.FC = () => {
       {listing.status === 'published' && !listing.has_responded && (
         <div className="mt-8 border-t pt-6">
           <h3 className="text-lg font-semibold mb-4">Откликнуться на заявку</h3>
+          {showBalanceError && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-4">
+              <p className="text-red-700">
+                Недостаточно баллов! Для создания отклика требуется 1 балл. Пожалуйста, пополните баланс.
+              </p>
+            </div>
+          )}
           <div className="space-y-4">
             <div>
               <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-2">

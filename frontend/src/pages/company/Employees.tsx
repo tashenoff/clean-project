@@ -16,6 +16,7 @@ import { Card } from '../../components/ui/card';
 import { Alert } from '../../components/ui/alert';
 import { Dialog } from '../../components/ui/dialog';
 import { Label } from '../../components/ui/label';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface Employee {
   id: number;
@@ -25,6 +26,17 @@ interface Employee {
   date_added: string;
 }
 
+// Функция генерации пароля
+const generatePassword = () => {
+  const length = 12;
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    password += charset.charAt(Math.floor(Math.random() * charset.length));
+  }
+  return password;
+};
+
 const CompanyEmployees: React.FC = () => {
   const { id: companyId } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -32,14 +44,16 @@ const CompanyEmployees: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     name: '',
-    password: '',
+    password: generatePassword(), // Генерируем пароль при инициализации
     company_role: 'employee' as 'owner' | 'admin' | 'manager' | 'employee'
   });
   const [showAddForm, setShowAddForm] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [resetPasswordSuccess, setResetPasswordSuccess] = useState('');
 
   // Добавляем эффект для отслеживания изменений employees
   useEffect(() => {
@@ -128,6 +142,8 @@ const CompanyEmployees: React.FC = () => {
       return;
     }
 
+    const generatedPassword = formData.password; // Сохраняем пароль перед сбросом формы
+
     try {
       await companyAPI.addEmployee({
         email: formData.email,
@@ -138,12 +154,13 @@ const CompanyEmployees: React.FC = () => {
         company_id: Number(companyId)
       });
 
-      setSuccess('Сотрудник успешно добавлен');
+      setSuccess(`Сотрудник успешно добавлен! Пароль для входа: ${generatedPassword}`);
       setShowAddForm(false);
+      setShowPassword(false);
       setFormData({
         email: '',
         name: '',
-        password: '',
+        password: generatePassword(),
         company_role: 'employee'
       });
 
@@ -177,6 +194,30 @@ const CompanyEmployees: React.FC = () => {
     }
   };
 
+  const handleResetPassword = async (employeeId: number) => {
+    if (!canManageEmployees) {
+      setError('У вас нет прав на сброс пароля сотрудников');
+      return;
+    }
+
+    if (!window.confirm('Вы уверены, что хотите сбросить пароль этого сотрудника?')) {
+      return;
+    }
+
+    try {
+      const response = await companyAPI.resetEmployeePassword(Number(companyId), employeeId);
+      setResetPasswordSuccess(`Новый пароль сотрудника: ${response.data.new_password}`);
+      
+      // Очистим сообщение об успехе через 30 секунд
+      setTimeout(() => {
+        setResetPasswordSuccess('');
+      }, 30000);
+    } catch (err: any) {
+      console.error('Error resetting password:', err);
+      setError(err.response?.data?.error || 'Ошибка при сбросе пароля');
+    }
+  };
+
   // Если у пользователя нет прав на управление сотрудниками, закрываем форму добавления
   useEffect(() => {
     if (!canManageEmployees && showAddForm) {
@@ -184,13 +225,27 @@ const CompanyEmployees: React.FC = () => {
     }
   }, [canManageEmployees, showAddForm]);
 
+  const handleShowAddForm = () => {
+    setFormData({
+      ...formData,
+      password: generatePassword() // Генерируем новый пароль при открытии формы
+    });
+    setShowAddForm(true);
+  };
+
+  // Обновляем обработчик отмены
+  const handleCancel = () => {
+    setShowAddForm(false);
+    setShowPassword(false);
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Сотрудники компании</h1>
         {canManageEmployees && (
           <button
-            onClick={() => setShowAddForm(true)}
+            onClick={handleShowAddForm}
             className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
           >
             Добавить сотрудника
@@ -207,6 +262,12 @@ const CompanyEmployees: React.FC = () => {
       {success && (
         <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
           {success}
+        </div>
+      )}
+      
+      {resetPasswordSuccess && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+          {resetPasswordSuccess}
         </div>
       )}
       
@@ -244,16 +305,27 @@ const CompanyEmployees: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Пароль
+                Пароль (сгенерирован автоматически)
               </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={formData.password}
+                  readOnly
+                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mt-1">
+                Сохраните этот пароль, он будет показан только один раз
+              </p>
             </div>
             
             <div>
@@ -278,7 +350,7 @@ const CompanyEmployees: React.FC = () => {
             <div className="md:col-span-2 flex justify-end gap-4">
               <button
                 type="button"
-                onClick={() => setShowAddForm(false)}
+                onClick={handleCancel}
                 className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
               >
                 Отмена
@@ -321,7 +393,14 @@ const CompanyEmployees: React.FC = () => {
                     <TableCell>{employee.company_role}</TableCell>
                     <TableCell>{new Date(employee.date_added).toLocaleDateString()}</TableCell>
                     {canManageEmployees && (
-                      <TableCell className="text-right">
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleResetPassword(employee.id)}
+                        >
+                          Сбросить пароль
+                        </Button>
                         <Button
                           variant="destructive"
                           size="sm"
@@ -342,7 +421,7 @@ const CompanyEmployees: React.FC = () => {
           <p className="text-gray-500 mb-4">В компании пока нет сотрудников.</p>
           {canManageEmployees && (
             <Button
-              onClick={() => setShowAddForm(true)}
+              onClick={handleShowAddForm}
             >
               Добавить первого сотрудника
             </Button>

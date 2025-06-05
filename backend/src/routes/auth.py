@@ -59,7 +59,7 @@ def register_step1():
             return jsonify({'error': 'User with this email already exists'}), 409
         
         # Hash password
-        hashed_password = generate_password_hash(data['password'])
+        hashed_password = generate_password_hash(data['password'], method='pbkdf2:sha256')
         
         # Insert user
         cursor = conn.execute(
