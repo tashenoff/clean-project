@@ -16,6 +16,16 @@ const CustomerListingDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState('details');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const { user } = useAuth();
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [selectedExecutor, setSelectedExecutor] = useState<number | null>(null);
+  const [reviewText, setReviewText] = useState('');
+  const [rating, setRating] = useState(5);
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState('');
+  const [executorReviews, setExecutorReviews] = useState<any[]>([]);
+  const [executorAvgRating, setExecutorAvgRating] = useState<number | null>(null);
+  const [executorReviewCount, setExecutorReviewCount] = useState<number>(0);
+  const [modalResponses, setModalResponses] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchListingData = async () => {
@@ -85,6 +95,18 @@ const CustomerListingDetail: React.FC = () => {
     fetchListingData();
   }, [id]);
 
+  // Получить отзывы выбранного исполнителя (если выбран)
+  useEffect(() => {
+    if (!selectedExecutor) return;
+    fetch(`/api/users/${selectedExecutor}/reviews`)
+      .then(res => res.json())
+      .then(data => {
+        setExecutorReviews(data.reviews || []);
+        setExecutorAvgRating(data.average_rating || null);
+        setExecutorReviewCount(data.count || 0);
+      });
+  }, [selectedExecutor, showCompleteModal]);
+
   // Проверка прав доступа
   const hasAccess = user && listing?.owner && user.id === listing.owner.id;
 
@@ -146,6 +168,59 @@ const CustomerListingDetail: React.FC = () => {
     return <Badge variant={variant}>{text}</Badge>;
   };
 
+  const handleOpenCompleteModal = async () => {
+    setShowCompleteModal(true);
+    setSelectedExecutor(null);
+    setReviewText('');
+    setRating(5);
+    setReviewError('');
+    // Загружаем отклики для модального окна
+    if (id) {
+      try {
+        const res = await responsesAPI.getListingResponses(Number(id));
+        setModalResponses(res.data.responses || []);
+      } catch (e) {
+        setModalResponses([]);
+      }
+    }
+  };
+
+  const handleSubmitComplete = async () => {
+    if (!selectedExecutor) {
+      setReviewError('Выберите исполнителя');
+      return;
+    }
+    if (!rating || rating < 1 || rating > 5) {
+      setReviewError('Поставьте рейтинг от 1 до 5');
+      return;
+    }
+    setSubmittingReview(true);
+    setReviewError('');
+    try {
+      const res = await fetch(`/api/listings/${id}/complete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ executor_id: selectedExecutor, rating, text: reviewText })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setReviewError(data.error || 'Ошибка завершения заявки');
+        setSubmittingReview(false);
+        return;
+      }
+      setShowCompleteModal(false);
+      setListing({ ...listing, status: 'completed' });
+      setSuccessMessage('Заявка завершена и отзыв отправлен!');
+    } catch (e) {
+      setReviewError('Ошибка завершения заявки');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -170,6 +245,10 @@ const CustomerListingDetail: React.FC = () => {
         <span className="block sm:inline"> The requested listing could not be found.</span>
       </div>
     );
+  }
+
+  if (showCompleteModal) {
+    console.log('DEBUG responses for complete modal:', responses);
   }
 
   return (
@@ -220,7 +299,7 @@ const CustomerListingDetail: React.FC = () => {
                 )}
                 {(listing.status === 'published' || listing.status === 'unpublished') && (
                   <button
-                    onClick={() => handleStatusChange('closed')}
+                    onClick={handleOpenCompleteModal}
                     disabled={responseLoading}
                     className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md text-sm font-medium disabled:opacity-50"
                   >
@@ -336,6 +415,98 @@ const CustomerListingDetail: React.FC = () => {
             </Table>
           </CardContent>
         </Card>
+      )}
+
+      {/* Модальное окно завершения заявки */}
+      {showCompleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold mb-4">Завершить заявку и оставить отзыв</h2>
+            <div className="mb-4">
+              <label className="block mb-1 font-medium">Выберите исполнителя</label>
+              <select
+                className="w-full border rounded px-3 py-2"
+                value={selectedExecutor || ''}
+                onChange={e => setSelectedExecutor(Number(e.target.value))}
+              >
+                <option value="">-- Выберите --</option>
+                {modalResponses.filter(r => r.status === 'accepted').map(r => (
+                  <option key={r.user_id} value={r.user_id}>{r.email} ({r.city}, {r.country})</option>
+                ))}
+              </select>
+            </div>
+            {selectedExecutor && (
+              <div className="mb-4">
+                <div className="flex items-center mb-1">
+                  <span className="font-medium mr-2">Средний рейтинг исполнителя:</span>
+                  {executorAvgRating !== null ? (
+                    <span className="text-yellow-500 font-bold">{executorAvgRating.toFixed(2)} ★</span>
+                  ) : (
+                    <span className="text-gray-400">Нет отзывов</span>
+                  )}
+                  <span className="ml-2 text-gray-500 text-sm">({executorReviewCount} отзывов)</span>
+                </div>
+                {executorReviews.length > 0 && (
+                  <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+                    {executorReviews.map((rev: any) => (
+                      <div key={rev.id} className="mb-2 border-b pb-1 last:border-b-0 last:pb-0">
+                        <div className="flex items-center text-sm">
+                          <span className="text-yellow-500 mr-1">{'★'.repeat(rev.rating)}</span>
+                          <span className="text-gray-500 ml-2">{rev.customer_email}</span>
+                          <span className="ml-2 text-gray-400">{new Date(rev.created_at).toLocaleDateString()}</span>
+                        </div>
+                        <div className="text-gray-700 text-sm">{rev.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="block mb-1 font-medium">Рейтинг</label>
+              <div className="flex space-x-1">
+                {[1,2,3,4,5].map(star => (
+                  <button
+                    key={star}
+                    type="button"
+                    className={star <= rating ? 'text-yellow-400 text-2xl' : 'text-gray-300 text-2xl'}
+                    onClick={() => setRating(star)}
+                    aria-label={`Поставить ${star} звезд`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mb-4">
+              <label className="block mb-1 font-medium">Отзыв</label>
+              <textarea
+                className="w-full border rounded px-3 py-2"
+                rows={3}
+                value={reviewText}
+                onChange={e => setReviewText(e.target.value)}
+                placeholder="Ваш отзыв об исполнителе..."
+              />
+            </div>
+            {reviewError && <div className="text-red-600 mb-2 text-sm">{reviewError}</div>}
+            <div className="flex justify-end space-x-2">
+              <button
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                onClick={() => setShowCompleteModal(false)}
+                disabled={submittingReview}
+              >
+                Отмена
+              </button>
+              <button
+                className="px-4 py-2 bg-primary text-white rounded hover:bg-primary-dark"
+                onClick={handleSubmitComplete}
+                disabled={submittingReview}
+              >
+                Завершить
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

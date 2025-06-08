@@ -449,3 +449,47 @@ def get_my_listings_statistics(current_user):
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
+
+# Complete listing with review
+@listings_bp.route('/<int:listing_id>/complete', methods=['POST'])
+@token_required
+def complete_listing_with_review(current_user, listing_id):
+    data = request.get_json()
+    rating = data.get('rating')
+    review_text = data.get('text', '')
+    executor_id = data.get('executor_id')
+
+    if not (rating and executor_id):
+        return jsonify({'error': 'Missing rating or executor_id'}), 400
+    if not (1 <= int(rating) <= 5):
+        return jsonify({'error': 'Rating must be between 1 and 5'}), 400
+
+    conn = get_db_connection()
+    try:
+        # Проверяем, что заявка принадлежит текущему пользователю
+        listing = conn.execute('SELECT * FROM listings WHERE id = ? AND user_id = ?', (listing_id, current_user['id'])).fetchone()
+        if not listing:
+            return jsonify({'error': 'Listing not found or unauthorized'}), 404
+        # Проверяем, что выбранный исполнитель действительно откликался
+        response = conn.execute('SELECT * FROM responses WHERE listing_id = ? AND user_id = ?', (listing_id, executor_id)).fetchone()
+        if not response:
+            return jsonify({'error': 'Executor did not respond to this listing'}), 400
+        # Проверяем, что заявка ещё не завершена
+        if listing['status'] == 'completed':
+            return jsonify({'error': 'Listing already completed'}), 400
+        # Переводим заявку в статус completed
+        conn.execute('UPDATE listings SET status = ? WHERE id = ?', ('completed', listing_id))
+        # Обновляем статус отклика на accepted
+        conn.execute('UPDATE responses SET status = ? WHERE listing_id = ? AND user_id = ?', ('accepted', listing_id, executor_id))
+        # Создаём отзыв
+        conn.execute('''
+            INSERT INTO reviews (listing_id, customer_id, executor_id, rating, text)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (listing_id, current_user['id'], executor_id, rating, review_text))
+        conn.commit()
+        return jsonify({'message': 'Listing completed and review submitted'}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()

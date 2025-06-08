@@ -139,6 +139,22 @@ def init_db(db_path):
     )
     ''')
     
+    # Create Reviews table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        listing_id INTEGER NOT NULL,
+        customer_id INTEGER NOT NULL,
+        executor_id INTEGER NOT NULL,
+        rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+        text TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (listing_id) REFERENCES listings (id) ON DELETE CASCADE,
+        FOREIGN KEY (customer_id) REFERENCES users (id) ON DELETE CASCADE,
+        FOREIGN KEY (executor_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+    ''')
+    
     conn.commit()
     conn.close()
 

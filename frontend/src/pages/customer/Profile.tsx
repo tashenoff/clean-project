@@ -29,6 +29,9 @@ const Profile = () => {
   const [company, setCompany] = useState<CompanyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [avgRating, setAvgRating] = useState<number | null>(null);
+  const [reviewCount, setReviewCount] = useState<number>(0);
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -44,6 +47,16 @@ const Profile = () => {
           setCompany(companyResponse.data.company);
         }
         
+        if (user?.role === 'executor' && user?.id) {
+          fetch(`/api/users/${user.id}/reviews`)
+            .then(res => res.json())
+            .then(data => {
+              setReviews(data.reviews || []);
+              setAvgRating(data.average_rating || null);
+              setReviewCount(data.count || 0);
+            });
+        }
+        
         setError(null);
       } catch (err) {
         console.error('Error fetching profile data:', err);
@@ -54,7 +67,7 @@ const Profile = () => {
     };
 
     fetchProfileData();
-  }, []);
+  }, [user]);
 
   if (loading) {
     return (
@@ -151,6 +164,35 @@ const Profile = () => {
                 </p>
               </div>
             </div>
+          </div>
+        )}
+        
+        {user?.role === 'executor' && (
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-2">Отзывы и рейтинг</h3>
+            <div className="flex items-center mb-2">
+              <span className="font-medium mr-2">Средний рейтинг:</span>
+              {avgRating !== null ? (
+                <span className="text-yellow-500 font-bold">{avgRating.toFixed(2)} ★</span>
+              ) : (
+                <span className="text-gray-400">Нет отзывов</span>
+              )}
+              <span className="ml-2 text-gray-500 text-sm">({reviewCount} отзывов)</span>
+            </div>
+            {reviews.length > 0 && (
+              <div className="max-h-40 overflow-y-auto border rounded p-2 bg-gray-50">
+                {reviews.map((rev: any) => (
+                  <div key={rev.id} className="mb-2 border-b pb-1 last:border-b-0 last:pb-0">
+                    <div className="flex items-center text-sm">
+                      <span className="text-yellow-500 mr-1">{'★'.repeat(rev.rating)}</span>
+                      <span className="text-gray-500 ml-2">{rev.customer_email}</span>
+                      <span className="ml-2 text-gray-400">{new Date(rev.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div className="text-gray-700 text-sm">{rev.text}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         

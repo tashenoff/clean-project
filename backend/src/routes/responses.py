@@ -85,6 +85,13 @@ def get_my_responses(current_user):
             FROM responses r
             JOIN listings l ON r.listing_id = l.id
             WHERE r.user_id = ?
+            AND (
+                -- Показываем все отклики для активных заявок
+                (l.status != 'completed' AND r.status IN ('pending', 'rejected'))
+                OR 
+                -- Для завершенных заявок показываем только принятые отклики
+                (l.status = 'completed' AND r.status = 'accepted')
+            )
         '''
         params = [current_user['id']]
         
@@ -100,11 +107,21 @@ def get_my_responses(current_user):
         responses = conn.execute(query, params).fetchall()
         
         # Count total responses for pagination
-        count_query = 'SELECT COUNT(*) as count FROM responses WHERE user_id = ?'
+        count_query = '''
+            SELECT COUNT(*) as count 
+            FROM responses r
+            JOIN listings l ON r.listing_id = l.id
+            WHERE r.user_id = ?
+            AND (
+                (l.status != 'completed' AND r.status IN ('pending', 'rejected'))
+                OR 
+                (l.status = 'completed' AND r.status = 'accepted')
+            )
+        '''
         count_params = [current_user['id']]
         
         if status:
-            count_query += ' AND status = ?'
+            count_query += ' AND r.status = ?'
             count_params.append(status)
         
         total = conn.execute(count_query, count_params).fetchone()['count']
@@ -368,6 +385,34 @@ def delete_response(current_user, response_id):
         
     except Exception as e:
         conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+# Получить отзывы о пользователе (исполнителе)
+@responses_bp.route('/users/<int:user_id>/reviews', methods=['GET'])
+def get_user_reviews(user_id):
+    conn = get_db_connection()
+    try:
+        reviews = conn.execute('''
+            SELECT r.*, u.email as customer_email, l.title as listing_title
+            FROM reviews r
+            JOIN users u ON r.customer_id = u.id
+            JOIN listings l ON r.listing_id = l.id
+            WHERE r.executor_id = ?
+            ORDER BY r.created_at DESC
+        ''', (user_id,)).fetchall()
+        reviews_list = [dict(row) for row in reviews]
+        avg_rating = None
+        count = len(reviews_list)
+        if count > 0:
+            avg_rating = sum([r['rating'] for r in reviews_list]) / count
+        return jsonify({
+            'reviews': reviews_list,
+            'average_rating': avg_rating,
+            'count': count
+        }), 200
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
