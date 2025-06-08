@@ -22,13 +22,16 @@ const CustomerDashboard: React.FC = () => {
         const activityResponse = await userAPI.getActivity();
         setRecentActivity(activityResponse.data.activities.slice(0, 5));
         
-        // For a real implementation, we would fetch actual stats from an API endpoint
-        // This is a placeholder that would be replaced with real API calls
+        // Получаем актуальную статистику заявок и откликов
+        const statsResponse = await fetch('/api/listings/my-listings/statistics', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const statsData = await statsResponse.json();
         setStats({
-          totalListings: 12,
-          activeListings: 5,
-          completedListings: 7,
-          totalResponses: 34
+          totalListings: statsData.totalListings || 0,
+          activeListings: statsData.activeListings || 0,
+          completedListings: statsData.completedListings || 0,
+          totalResponses: statsData.totalResponses || 0
         });
       } catch (error) {
         console.error('Error fetching dashboard data:', error);

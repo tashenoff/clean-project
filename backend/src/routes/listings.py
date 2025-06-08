@@ -417,3 +417,35 @@ def change_listing_status(current_user, listing_id):
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
+
+# Get statistics for user's listings
+@listings_bp.route('/my-listings/statistics', methods=['GET'])
+@token_required
+def get_my_listings_statistics(current_user):
+    conn = get_db_connection()
+    try:
+        # Получаем статистику по заявкам
+        stats = conn.execute('''
+            SELECT 
+                COUNT(*) as total_listings,
+                SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as active_listings,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_listings
+            FROM listings
+            WHERE user_id = ?
+        ''', (current_user['id'],)).fetchone()
+        # Получаем количество откликов на все заявки пользователя
+        responses = conn.execute('''
+            SELECT COUNT(*) as total_responses
+            FROM responses
+            WHERE listing_id IN (SELECT id FROM listings WHERE user_id = ?)
+        ''', (current_user['id'],)).fetchone()
+        return jsonify({
+            'totalListings': stats['total_listings'],
+            'activeListings': stats['active_listings'],
+            'completedListings': stats['completed_listings'],
+            'totalResponses': responses['total_responses']
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()

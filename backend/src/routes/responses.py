@@ -125,6 +125,32 @@ def get_my_responses(current_user):
     finally:
         conn.close()
 
+# Get statistics for user's responses
+@responses_bp.route('/responses/my-responses/statistics', methods=['GET'])
+@token_required
+def get_my_responses_statistics(current_user):
+    conn = get_db_connection()
+    try:
+        stats = conn.execute('''
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) as accepted,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
+            FROM responses
+            WHERE user_id = ?
+        ''', (current_user['id'],)).fetchone()
+        return jsonify({
+            'total': stats['total'],
+            'pending': stats['pending'],
+            'accepted': stats['accepted'],
+            'rejected': stats['rejected']
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
 # Create response to listing
 @responses_bp.route('/listings/<int:listing_id>/responses', methods=['POST'])
 @token_required

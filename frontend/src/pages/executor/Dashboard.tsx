@@ -31,19 +31,19 @@ const ExecutorDashboard: React.FC = () => {
           per_page: 5
         });
         setAvailableListings(listingsResponse.data.listings);
-        
-        // For a real implementation, we would fetch actual stats from an API endpoint
-        // This is a placeholder that would be replaced with real API calls
-        if (user?.executor_profile) {
-          setStats({
-            totalResponses: 17,
-            acceptedResponses: 11,
-            rejectedResponses: 1,
-            pendingResponses: 5,
-            points: user.executor_profile.points || 0,
-            experienceLevel: user.executor_profile.experience_level || 'BEGINNER'
-          });
-        }
+
+        // Получаем актуальную статистику откликов
+        const statsResponse = await fetch('/api/responses/my-responses/statistics', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const statsData = await statsResponse.json();
+        setStats(prev => ({
+          ...prev,
+          totalResponses: statsData.total || 0,
+          acceptedResponses: statsData.accepted || 0,
+          rejectedResponses: statsData.rejected || 0,
+          pendingResponses: statsData.pending || 0
+        }));
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
@@ -74,14 +74,6 @@ const ExecutorDashboard: React.FC = () => {
             <p className="text-gray-600">
               Here's an overview of your activity and available listings.
             </p>
-          </div>
-          <div className="text-right">
-            <div className="bg-secondary text-white px-4 py-2 rounded-lg font-bold">
-              {stats.points} points
-            </div>
-            <div className="mt-2 bg-primary text-white px-4 py-1 rounded-lg text-sm">
-              {stats.experienceLevel}
-            </div>
           </div>
         </div>
       </div>
