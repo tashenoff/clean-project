@@ -17,6 +17,7 @@ from src.routes.companies import companies_bp
 from src.routes.listings import listings_bp
 from src.routes.responses import responses_bp
 from src.routes.admin import admin_bp
+from src.routes.messages import messages_bp
 
 # Create Flask app
 app = Flask(__name__)
@@ -34,6 +35,7 @@ app.register_blueprint(companies_bp, url_prefix='/api/companies')
 app.register_blueprint(listings_bp, url_prefix='/api/listings')
 app.register_blueprint(responses_bp, url_prefix='/api')  # Changed to /api to support both /api/listings/<id>/responses and /api/responses/...
 app.register_blueprint(admin_bp, url_prefix='/api/admin')
+app.register_blueprint(messages_bp, url_prefix='/api')
 
 # Error handlers
 @app.errorhandler(404)

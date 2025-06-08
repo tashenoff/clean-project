@@ -22,6 +22,7 @@ import ExecutorListings from './pages/executor/Listings';
 import ExecutorListingDetail from './pages/executor/ListingDetail';
 import ExecutorResponses from './pages/executor/Responses';
 import ExecutorProfile from './pages/executor/Profile';
+import ExecutorMessages from './pages/executor/Messages';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/Dashboard';
@@ -43,6 +44,7 @@ import CompanyLayout from './layouts/CompanyLayout';
 
 // Auth Guard
 import ProtectedRoute from './components/ProtectedRoute';
+import Chat from './pages/messages/Chat';
 
 function App() {
   return (
@@ -70,6 +72,7 @@ function App() {
                 <Route path="/customer/listings/:id" element={<CustomerListingDetail />} />
                 <Route path="/customer/listings/:id/edit" element={<CustomerEditListing />} />
                 <Route path="/customer/profile" element={<CustomerProfile />} />
+                <Route path="/customer/messages/:userId/:listingId" element={<Chat />} />
               </Route>
             </Route>
 
@@ -85,6 +88,8 @@ function App() {
                 <Route path="/executor/listings/:id" element={<ExecutorListingDetail />} />
                 <Route path="/executor/responses" element={<ExecutorResponses />} />
                 <Route path="/executor/profile" element={<ExecutorProfile />} />
+                <Route path="/executor/messages" element={<ExecutorMessages />} />
+                <Route path="/executor/messages/:userId/:listingId" element={<Chat />} />
               </Route>
             </Route>
 

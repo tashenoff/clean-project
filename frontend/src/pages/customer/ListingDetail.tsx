@@ -397,16 +397,33 @@ const CustomerListingDetail: React.FC = () => {
                     <TableCell>
                       <div className="font-medium">{response.email}</div>
                       <div className="text-sm text-gray-500">{response.city}, {response.country}</div>
+                      <div className="text-xs text-gray-400">Опыт: {response.experience_level}</div>
                     </TableCell>
-                    <TableCell>{response.experience_level}</TableCell>
                     <TableCell>
-                      <div className="truncate max-w-xs">{response.message}</div>
+                      <div className="font-medium">{response.listing_title}</div>
+                      <div className="text-xs text-gray-500">{response.category}</div>
+                      <div className="text-xs text-gray-400">{response.message}</div>
                     </TableCell>
                     <TableCell>{getResponseStatusBadge(response.status)}</TableCell>
                     <TableCell>{new Date(response.created_at).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
-                      <Link to={`/customer/responses/${response.id}`} className="text-primary hover:text-primary-dark">
-                        View
+                      <span
+                        className="text-green-600 hover:underline cursor-pointer mr-2"
+                        onClick={() => handleResponseAction(response.id, 'accepted')}
+                      >
+                        Принять
+                      </span>
+                      <span
+                        className="text-red-600 hover:underline cursor-pointer mr-2"
+                        onClick={() => handleResponseAction(response.id, 'rejected')}
+                      >
+                        Отклонить
+                      </span>
+                      <Link
+                        to={`/customer/messages/${response.user_id}/${response.listing_id}`}
+                        className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs"
+                      >
+                        Написать сообщение
                       </Link>
                     </TableCell>
                   </TableRow>
@@ -422,6 +439,25 @@ const CustomerListingDetail: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
           <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
             <h2 className="text-lg font-semibold mb-4">Завершить заявку и оставить отзыв</h2>
+            <div className="mb-4">
+              <label className="block mb-1 font-medium">Выберите исполнителя</label>
+              <div className="space-y-2">
+                {modalResponses.filter(r => r.status === 'accepted').map(r => (
+                  <div key={r.user_id} className="flex items-center justify-between border rounded px-2 py-1 mb-1">
+                    <div>
+                      <span className="font-medium">{r.email}</span>
+                      <span className="text-sm text-gray-500 ml-2">{r.city}, {r.country}</span>
+                    </div>
+                    <Link
+                      to={`/customer/messages/${r.user_id}/${r.listing_id}`}
+                      className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs ml-2"
+                    >
+                      Написать сообщение
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="mb-4">
               <label className="block mb-1 font-medium">Выберите исполнителя</label>
               <select

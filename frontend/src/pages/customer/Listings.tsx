@@ -314,22 +314,24 @@ const CustomerListings: React.FC = () => {
                       {new Date(response.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      {response.status === 'pending' && (
-                        <div className="space-x-2">
-                          <button
-                            onClick={() => handleResponseAction(response.id, 'accepted')}
-                            className="text-green-600 hover:text-green-900"
-                          >
-                            Принять
-                          </button>
-                          <button
-                            onClick={() => handleResponseAction(response.id, 'rejected')}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            Отклонить
-                          </button>
-                        </div>
-                      )}
+                      <span
+                        className="text-green-600 hover:underline cursor-pointer mr-2"
+                        onClick={() => handleResponseAction(response.id, 'accepted')}
+                      >
+                        Принять
+                      </span>
+                      <span
+                        className="text-red-600 hover:underline cursor-pointer mr-2"
+                        onClick={() => handleResponseAction(response.id, 'rejected')}
+                      >
+                        Отклонить
+                      </span>
+                      <Link
+                        to={`/customer/messages/${response.user_id}/${response.listing_id}`}
+                        className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs ml-2"
+                      >
+                        Написать сообщение
+                      </Link>
                     </td>
                   </tr>
                 ))}
